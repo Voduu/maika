@@ -24,6 +24,16 @@ pytest
 After a change to a shared part (the database module, permission check,
 settings, registry, message pipeline), run the full suite.
 
+## Git workflow
+
+- `main` is protected. Work happens on a branch and reaches `main`
+  through a pull request that passes CI.
+- Branch names use a prefix and lowercase words joined by hyphens:
+  `feature/`, `fix/`, `chore/` or `docs/` (for example
+  `feature/config-loader`). One branch per build slice.
+- Commit messages are short imperative sentences ("Add config
+  loader"). Do not commit or push unless the prompt asks for it.
+
 ## Code conventions
 
 - PEP 8 with 79-character lines. Comments and docstrings stay within 72
