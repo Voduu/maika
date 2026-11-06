@@ -46,8 +46,10 @@ settings, registry, message pipeline), run the full suite.
   declared type (bool, int, float, text, time, list[int], list[str],
   json).
 - Decimal SQL math multiplies by `1.0` to avoid integer division.
-- Migrations are numbered files in `migrations/`. The bot copies the
-  database to a backup folder before applying one.
+- Migrations are numbered files in `migrations/`. Before applying one,
+  the bot makes a backup with SQLite's backup function
+  (`sqlite3.Connection.backup`). A plain file copy of a live database
+  is never used, because WAL mode keeps recent writes in a separate file.
 
 ## Testing
 
