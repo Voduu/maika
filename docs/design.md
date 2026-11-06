@@ -851,7 +851,8 @@ All model calls go through one function, `generate(request)`. Layers 1 and 2 nev
 - A scheduled task backs up the database once a day, at 4 a.m. by default, using SQLite's backup function. Copying the live database file can miss recent changes (WAL mode keeps them in a separate file) or produce an unreadable copy.
 - Files: `backups/daily/maika-YYYY-MM-DD.db`. Copies older than 30 days are deleted. The backup time and the number of days kept are settings.
 - Each new backup gets `PRAGMA integrity_check`. Success posts to `#bot-log` and failure to `#errors`.
-- Before applying a migration (9.9) the bot makes a backup in a separate folder, using SQLite's backup function (the same method as the daily backup, never a plain file copy). The last 10 are kept.- The backups folder sits inside `appdata`, so Unraid's backup includes it.
+- Before applying a migration (9.9) the bot makes a backup in a separate folder, using SQLite's backup function (the same method as the daily backup, never a plain file copy). The last 10 are kept.
+- The backups folder sits inside `appdata`, so Unraid's backup includes it.
 - Restore: stop the bot, copy the chosen backup over the database file, start the bot.
 - A weekly copy of the newest database backup goes to another machine (build step 1), so a failure of the server does not take the backups with it. The last `backups.offsite_copies_kept` weekly copies are kept (4 to start).
 - **Deleted memories in backups.** `/forget` removes a memory from the live database at once. Copies of it age out of the daily backups after 30 days and out of the offsite copies after the offsite retention (4 weeks to start). Friends are told this in the `/help` memory note (2.6).
