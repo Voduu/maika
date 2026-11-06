@@ -72,4 +72,4 @@ language model connection. See [docs/design.md](docs/design.md).
 
 ## License
 
-Not yet chosen.
+MIT. See [LICENSE](LICENSE).
