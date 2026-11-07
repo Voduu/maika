@@ -43,6 +43,13 @@ class CommandCategory(enum.Enum):
     OWNER = "Owner"
 
 
+class Visibility(enum.Enum):
+    """Who sees a command's reply (design section 1.5)."""
+
+    PUBLIC = "public"
+    EPHEMERAL = "ephemeral"
+
+
 class UnknownCommandError(Exception):
     """Raised when a command name has no definition in the registry."""
 
@@ -58,6 +65,8 @@ class CommandDefinition:
 
     ``name`` is the full command name, such as ``feed subscribe``.
     ``key`` is the permission key the wrapper checks.
+    ``visibility`` defaults to EPHEMERAL, so a reply is private unless
+    the definition says otherwise.
     """
 
     name: str
@@ -66,6 +75,7 @@ class CommandDefinition:
     key: PermissionKey
     help_text: str
     example: str
+    visibility: Visibility = Visibility.EPHEMERAL
 
     def __post_init__(self) -> None:
         """Raise ValueError when the definition is wrong."""
@@ -113,6 +123,11 @@ class CommandDefinition:
             raise ValueError(f"{self.name}: help_text must not be empty.")
         if self.example.strip() == "":
             raise ValueError(f"{self.name}: example must not be empty.")
+        if not isinstance(self.visibility, Visibility):
+            raise ValueError(
+                f"{self.name}: visibility must be a Visibility, not "
+                f"{self.visibility!r}."
+            )
 
 
 class CommandRegistry:

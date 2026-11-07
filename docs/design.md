@@ -1110,6 +1110,7 @@ Ideas not yet scheduled:
   - `/perm undo`: restore the rows a wildcard command cleared, using the audit log entries it wrote.
   - Show stored text (audit notes, keys and patterns containing `*`) in Discord with the characters escaped or in code formatting, so an asterisk is not read as Markdown italics.
 - `run_command` is synchronous. Add an async variant that shares the permission and logging code when the first command needs to `await` (for example a network check).
+- Per-result reply visibility: a command with an owner-only part (`/mood set`, the raw mood numbers, `/relationship set`; 1.5) needs its result to request an ephemeral reply. Add that when the first such command is built.
 
 ---
 
