@@ -5,9 +5,14 @@ rules are in section 5, "Database backups".
 """
 
 import sqlite3
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 
 MEMORY_DATABASE = ":memory:"
+
+# guild_id 0 means everywhere (design section 9.1).
+GLOBAL_GUILD_ID = 0
 
 WAL_MODE = "wal"
 
@@ -22,6 +27,44 @@ class BackupError(Exception):
 
 class JournalModeError(Exception):
     """Raised when a file database cannot be put in WAL mode."""
+
+
+class NestedTransactionError(Exception):
+    """Raised when a transaction starts inside another transaction."""
+
+
+@contextmanager
+def transaction(connection: sqlite3.Connection) -> Generator[None]:
+    """Run the ``with`` block in one transaction.
+
+    The transaction starts with ``BEGIN IMMEDIATE``, which takes the
+    write lock at once, so reads made inside the block cannot be
+    changed by another writer before the block writes. It commits
+    when the block finishes. If the block or the commit raises, the
+    transaction is rolled back and the exception is raised again.
+    That includes KeyboardInterrupt and task cancellation, so a
+    transaction is never left open.
+
+    SQLite has no nested transactions, so starting one while the
+    connection is already in a transaction raises
+    NestedTransactionError and changes nothing.
+    """
+    if connection.in_transaction:
+        raise NestedTransactionError(
+            "A transaction is already open on this connection. "
+            "Transactions cannot be nested; do all the writes inside "
+            "the outer transaction."
+        )
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+        connection.execute("COMMIT")
+    except BaseException:
+        # SQLite rolls back by itself after some errors, so check
+        # before rolling back.
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
 
 
 def _set_wal_mode(connection: sqlite3.Connection) -> str:

@@ -1101,6 +1101,7 @@ Ideas not yet scheduled:
   - A JSON setting's default is a mutable dict or list; copy it on read when the first JSON setting is defined.
   - STR_LIST accepts empty strings and repeated items; decide the rules when `addressing.names` is wired up.
   - Weight lists (comma-separated `value:percent` text, section 10 introduction) have no setting type yet; add one or keep them as TEXT with their own checks when the first such setting arrives.
+  - When `/config set` stores a value equal to the default, the reply should say so and mention `/config reset`, because an override equal to the default does not follow later default changes.
 
 ---
 
