@@ -37,10 +37,11 @@ Scope target: Layer 1 and Layer 2, with the minimum go-live set in section 7 (st
 
 **Check order** when a person uses a command:
 1. The owner always passes.
-2. A protected key passes for everyone.
-3. Blocks: a `chat` block refuses `chat.talk`; an `all` block refuses every key.
-4. Overrides: exact key, then `area.*`, then `*`. The first row found decides, allow or deny. When a server-specific row and a global row match the same key, the server-specific row wins.
-5. The person's level against the key's default level. No row at any earlier step means the level decides.
+2. A key that is owner-only is refused for everyone else, and no override or level is consulted.
+3. A protected key passes for everyone.
+4. Blocks: a `chat` block refuses `chat.talk`; an `all` block refuses every key.
+5. Overrides: exact key, then `area.*`, then `*`. The first row found decides, allow or deny. When a server-specific row and a global row match the same key, the server-specific row wins.
+6. The person's level against the key's default level. No row at any earlier step means the level decides.
 
 A refusal in conversation is silence. A refused slash command returns an ephemeral line from the fixed `denied` pool (3.9); the default text, used until that pool is built, is "You don't have permission for that." An override row holds user, key, allow or deny, and an optional server (9.3).
 
@@ -725,7 +726,7 @@ Slash commands and sentences are two front ends to one function (for example `ad
 **Change log:** every settings change is written to `audit_log` (kind `setting`, with old and new value) and posted to `#bot-log`.
 
 **Log channels (private server).** Eight log streams, each mapped to a channel by a setting. A stream with no channel set falls back to `#bot-log`, so channels can be created as their features arrive, and merged or split later with no code change. Each stream has a log-level setting.
-- `#bot-log`: startup and shutdown, settings changes, command usage.
+- `#bot-log`: startup and shutdown, settings changes, command usage. Command usage lines for protected keys (`/memories`, `/forget`) are written at `debug` level, so they appear only when the stream's level is lowered and repeated use cannot flood the channel; deletions are also recorded in `audit_log` (9.5).
 - `#errors`: exceptions and failed fetches.
 - `#permissions`: level, override, and block changes (a readable copy of the `audit_log` entries).
 - `#feeds`: what was posted and where.
@@ -986,6 +987,7 @@ Testing is set up in build step 1, before the permission code, so every later st
 - Event application: the cooldown claim, daily-limit check, and mood and relationship writes run in one `BEGIN IMMEDIATE` transaction (9.14).
 - Self-correction and crashes: a crash between the parts of a correction or a split reply is accepted, and persistent recovery is in the Parking Lot (3.14).
 - Sleeping messages: at wake she reads the listen channels from a watermark and replies to messages addressed to her, with caps, the sleepy flavor, and no mood or affinity events; the live queue limits do not apply (3.12).
+- Command-usage log lines for protected keys (`/memories`, `/forget`): written at `debug` level so repeated use cannot flood `#bot-log` (3.18).
 
 **Facts to check**
 - Whether the 1070 fits the case and has PCIe power connectors, and the electricity rate (relevant only if the 1070 gets installed).
@@ -1012,7 +1014,6 @@ Testing is set up in build step 1, before the permission code, so every later st
 - Defaults marked TBD in section 10 (about 40 values): chosen during build and testing, along with the cutoffs and name-list spellings tuned from `#decisions` (step 6).
 - Name-mention interjections: probability by mood, cooldown length, minimum context size (3.2).
 - Self-correction response format and validation rules (3.14).
-- Command-usage log lines for protected keys: a person repeating `/forget` could flood `#bot-log` (logging design, step 1).
 - Filter edits and older items (step 3): the query in 9.12 posts any stored item first seen after `start_at` that has no post row. After a filter edit, items that arrived earlier and match the new keywords would post at the next cycle. Options: accept that, or stamp the subscription's `start_at` with the edit time.
 - Photo IDs in captions and the exact `/retag` and `/removephoto` options (step 4).
 - Which Steam and Lodestone fields go into `feed_items` and `extra` (step 3, confirmed with real calls).
@@ -1108,6 +1109,7 @@ Ideas not yet scheduled:
   - Confirm before a wildcard `/perm` command that would clear existing rows, listing the rows and offering Confirm and Cancel.
   - `/perm undo`: restore the rows a wildcard command cleared, using the audit log entries it wrote.
   - Show stored text (audit notes, keys and patterns containing `*`) in Discord with the characters escaped or in code formatting, so an asterisk is not read as Markdown italics.
+- `run_command` is synchronous. Add an async variant that shares the permission and logging code when the first command needs to `await` (for example a network check).
 
 ---
 
