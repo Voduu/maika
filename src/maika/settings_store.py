@@ -60,6 +60,18 @@ class SettingChange:
     changed: bool
 
 
+@dataclass(frozen=True)
+class SettingLookup:
+    """A setting's typed value and where it came from.
+
+    ``stored`` is True when a stored row (server or global) supplied
+    the value, and False when the default applies.
+    """
+
+    value: Any
+    stored: bool
+
+
 def _read_text(
     connection: sqlite3.Connection, key: str, guild_id: int
 ) -> str | None:
@@ -84,6 +96,19 @@ def get_value(
 ) -> Any:
     """Return the typed value of a setting.
 
+    The lookup rules are those of ``lookup_value``.
+    """
+    return lookup_value(connection, registry, key, guild_id).value
+
+
+def lookup_value(
+    connection: sqlite3.Connection,
+    registry: SettingsRegistry,
+    key: str,
+    guild_id: int = GLOBAL_GUILD_ID,
+) -> SettingLookup:
+    """Return the typed value of a setting and whether it was stored.
+
     The server row is used only when ``guild_id`` is not 0 and the
     setting allows server scope. Otherwise the global row is used,
     and with no row the definition's default (which may be None).
@@ -106,7 +131,7 @@ def get_value(
         if text is None:
             continue
         try:
-            return parse_value(definition, text)
+            return SettingLookup(parse_value(definition, text), True)
         except SettingValueError:
             # Keep going down the lookup order: a bad server row
             # falls back to the global row, and a bad global row to
@@ -119,7 +144,7 @@ def get_value(
             )
             continue
 
-    return definition.default
+    return SettingLookup(definition.default, False)
 
 
 def set_value(

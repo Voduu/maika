@@ -243,6 +243,23 @@ def _range_text(low: int | float | None, high: int | float | None) -> str:
     return ""
 
 
+def describe_range(definition: SettingDefinition) -> str | None:
+    """Return a setting's range for display, such as "1 to 365".
+
+    Only the definition's own minimum and maximum count. Return None
+    when it has neither.
+    """
+    low = definition.minimum
+    high = definition.maximum
+    if low is not None and high is not None:
+        return f"{_format_number(low)} to {_format_number(high)}"
+    if low is not None:
+        return f"at least {_format_number(low)}"
+    if high is not None:
+        return f"at most {_format_number(high)}"
+    return None
+
+
 def describe_rule(definition: SettingDefinition) -> str:
     """Return the rule a value must follow, used in error messages."""
     value_type = definition.value_type

@@ -8,6 +8,7 @@ import pytest
 
 from maika import __main__ as entry
 from maika.bot import MaikaClient
+from maika.commands import CommandRegistry
 from maika.config import Config, ConfigError, Environment
 
 TOKEN = "secret-token-value-should-never-appear"
@@ -182,7 +183,12 @@ def test_main_creates_database_and_tables(
     ]
     assert len(applied_records) == 1
     assert applied_records[0].name == "maika"
-    client_class.assert_called_once_with(valid_config)
+    client_class.assert_called_once()
+    args, kwargs = client_class.call_args
+    assert args == (valid_config,)
+    assert isinstance(kwargs["connection"], sqlite3.Connection)
+    assert isinstance(kwargs["command_registry"], CommandRegistry)
+    kwargs["command_registry"].get("config get")
 
 
 def test_migration_error_returns_1_without_client(
@@ -205,27 +211,62 @@ def test_migration_error_returns_1_without_client(
     client_class.assert_not_called()
 
 
-def test_database_closed_before_client_runs(
-    monkeypatch, valid_config, client_class
-):
-    opened = []
+@pytest.fixture
+def opened(monkeypatch):
+    connections = []
     real_open = entry.open_database
 
     def recording_open(path):
         connection = real_open(path)
-        opened.append(connection)
+        connections.append(connection)
         return connection
 
-    def check_closed(*args, **kwargs):
-        with pytest.raises(sqlite3.ProgrammingError):
-            opened[0].execute("SELECT 1")
-
     monkeypatch.setattr(entry, "open_database", recording_open)
-    client_class.return_value.run.side_effect = check_closed
+    return connections
+
+
+def assert_closed(connection):
+    with pytest.raises(sqlite3.ProgrammingError):
+        connection.execute("SELECT 1")
+
+
+def test_database_open_while_client_runs_then_closed(
+    opened, valid_config, client_class
+):
+    def check_open(*args, **kwargs):
+        assert opened[0].execute("SELECT 1").fetchone()[0] == 1
+
+    client_class.return_value.run.side_effect = check_open
 
     assert entry.main() == 0
     assert len(opened) == 1
     client_class.return_value.run.assert_called_once()
+    assert client_class.call_args.kwargs["connection"] is opened[0]
+    assert_closed(opened[0])
+
+
+def test_database_closed_when_client_raises(
+    opened, valid_config, client_class
+):
+    client_class.return_value.run.side_effect = RuntimeError("crash")
+
+    with pytest.raises(RuntimeError):
+        entry.main()
+    assert_closed(opened[0])
+
+
+def test_database_closed_when_migration_fails(
+    tmp_path, monkeypatch, opened, valid_config, client_class
+):
+    bad_dir = tmp_path / "bad_migrations"
+    bad_dir.mkdir()
+    (bad_dir / "0001_broken.sql").write_text(
+        "INSERT INTO missing VALUES (1);\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(entry, "MIGRATIONS_DIR", bad_dir)
+
+    assert entry.main() == 1
+    assert_closed(opened[0])
 
 
 # Login failure
@@ -243,6 +284,11 @@ def login_failure(monkeypatch, valid_config):
 
 def test_login_failure_returns_1(login_failure):
     assert entry.main() == 1
+
+
+def test_login_failure_closes_database(login_failure, opened):
+    entry.main()
+    assert_closed(opened[0])
 
 
 def test_login_failure_prints_message_without_token(
