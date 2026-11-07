@@ -11,6 +11,7 @@ import discord
 from maika.bot import MaikaClient
 from maika.config import ConfigError, load_config_from_env
 from maika.database import BackupError, JournalModeError, open_database
+from maika.log_names import LOGGER_NAME
 from maika.migrate import MigrationError, apply_migrations
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -29,8 +30,6 @@ EXIT_LOGIN_FAILURE = 1
 
 # A fixed name, because __name__ is "__main__" when the bot runs as
 # ``python -m maika``.
-LOGGER_NAME = "maika"
-
 logger = logging.getLogger(LOGGER_NAME)
 
 LOGIN_FAILURE_MESSAGE = (

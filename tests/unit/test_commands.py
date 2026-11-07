@@ -6,6 +6,7 @@ from maika.commands import (
     CommandDefinition,
     CommandRegistry,
     UnknownCommandError,
+    Visibility,
 )
 from maika.permissions import (
     Level,
@@ -281,3 +282,36 @@ def test_33_character_word_rejected():
 def test_uppercase_or_empty_name_rejected(name):
     with pytest.raises(ValueError, match="lowercase words"):
         define(name=name)
+
+
+# Visibility
+
+
+def test_visibility_defaults_to_ephemeral():
+    assert define().visibility is Visibility.EPHEMERAL
+
+
+def test_visibility_can_be_public():
+    definition = CommandDefinition(
+        name="cat",
+        description="Show a cat photo.",
+        category=CommandCategory.CATS,
+        key=CAT_VIEW,
+        help_text="Posts a random photo of the named cat.",
+        example="/cat name:buttons",
+        visibility=Visibility.PUBLIC,
+    )
+    assert definition.visibility is Visibility.PUBLIC
+
+
+def test_visibility_must_be_enum():
+    with pytest.raises(ValueError, match="must be a Visibility"):
+        CommandDefinition(
+            name="cat",
+            description="Show a cat photo.",
+            category=CommandCategory.CATS,
+            key=CAT_VIEW,
+            help_text="Posts a random photo of the named cat.",
+            example="/cat name:buttons",
+            visibility="public",
+        )
