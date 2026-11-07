@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from maika import usage_log
 from maika.commands import (
     CommandCategory,
     CommandDefinition,
@@ -58,6 +59,7 @@ def handle(connection, interaction, function):
             owner_id=OWNER,
             command_name="retag",
             function=function,
+            log_usage=usage_log.log_usage,
         )
     )
 

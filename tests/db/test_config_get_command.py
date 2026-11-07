@@ -9,6 +9,7 @@ import discord
 import pytest
 from discord import app_commands
 
+from maika import usage_log
 from maika.bot import MaikaClient
 from maika.command_catalog import build_command_registry
 from maika.commands import CommandCategory, Visibility
@@ -135,6 +136,7 @@ def test_non_owner_refused_through_handle_command(migrated_db):
             owner_id=OWNER,
             command_name="config get",
             function=function,
+            log_usage=usage_log.log_usage,
         )
     )
 
@@ -143,6 +145,25 @@ def test_non_owner_refused_through_handle_command(migrated_db):
 
 
 # The tree after setup_hook
+
+
+def tree_command_names(client):
+    return {
+        command.qualified_name
+        for command in client.tree.walk_commands()
+        if not isinstance(command, app_commands.Group)
+    }
+
+
+def test_tree_and_registry_match(migrated_db):
+    client = make_client(migrated_db)
+    run_setup_hook(client)
+
+    registry_names = {
+        definition.name for definition in client.command_registry.commands()
+    }
+    assert tree_command_names(client) == registry_names
+    assert "config get" in registry_names
 
 
 def test_tree_has_config_get(migrated_db):

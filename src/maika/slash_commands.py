@@ -7,10 +7,12 @@ happen there.
 """
 
 import sqlite3
+from collections.abc import Callable
 
 import discord
 from discord import app_commands
 
+from maika.command_runner import CommandUsage
 from maika.commands import CommandRegistry
 from maika.config_commands import CONFIG_GET_NAME, config_get
 from maika.discord_adapter import guild_id_from_interaction, handle_command
@@ -27,8 +29,12 @@ def build_config_group(
     connection: sqlite3.Connection,
     registry: CommandRegistry,
     owner_id: int,
+    log_usage: Callable[[CommandUsage], None],
 ) -> app_commands.Group:
-    """Return the /config group with its subcommands."""
+    """Return the /config group with its subcommands.
+
+    ``log_usage`` receives each command call's usage record.
+    """
     group = app_commands.Group(
         name=CONFIG_GROUP_NAME, description=CONFIG_GROUP_DESCRIPTION
     )
@@ -49,6 +55,7 @@ def build_config_group(
             owner_id=owner_id,
             command_name=CONFIG_GET_NAME,
             function=lambda: config_get(connection, key, guild_id),
+            log_usage=log_usage,
         )
 
     return group
