@@ -46,7 +46,7 @@ A refusal in conversation is silence. A refused slash command returns an ephemer
 
 **Commands (owner-only):** `/perm level` (set a person's level, 2.3), `/perm grant` (set allow), `/perm deny` (set deny), `/perm reset` (remove the override, returning the key to the person's level), `/perm show` (the expanded result for every key and what decided it), `/perm history` (every change made to one person), `/perm keys` (lists every key with autocomplete), `/block` and `/unblock` (see Blocks below).
 
-**Wildcards.** `feed.*` covers every key beginning with `feed.`, including keys added later. The latest command overwrites earlier settings for every key it covers: a wildcard grant, deny, or reset removes the exact-key rows beneath it, and the bot's reply lists what it cleared ("Cleared 1 exception: `feed.notify` deny"). For "everything except one", grant the wildcard first, then deny the single key. The rule is broad command first, exceptions after. Owner-only fixed keys and protected keys ignore wildcards, including `*`. Every change goes to the audit log.
+**Wildcards.** `feed.*` covers every key beginning with `feed.`, including keys added later. The latest command overwrites earlier settings for every key it covers: a wildcard grant, deny, or reset removes the rows beneath it (for `*`, the exact-key rows and the `area.*` rows), and the bot's reply lists what it cleared ("Cleared 1 exception: `feed.notify` deny"). For "everything except one", grant the wildcard first, then deny the single key. The rule is broad command first, exceptions after. Owner-only fixed keys and protected keys ignore wildcards, including `*`. Every change goes to the audit log.
 
 **Initial keys (draft):**
 
@@ -1102,6 +1102,12 @@ Ideas not yet scheduled:
   - STR_LIST accepts empty strings and repeated items; decide the rules when `addressing.names` is wired up.
   - Weight lists (comma-separated `value:percent` text, section 10 introduction) have no setting type yet; add one or keep them as TEXT with their own checks when the first such setting arrives.
   - When `/config set` stores a value equal to the default, the reply should say so and mention `/config reset`, because an override equal to the default does not follow later default changes.
+- Command layer follow-ups (permissions):
+  - Validate that the target of `/perm` and `/block` is a real, non-bot member and that IDs are positive before calling the permission store.
+  - `/block` and `/unblock` need a scope option (this server or everywhere); the reply lists the block rows that remain.
+  - Confirm before a wildcard `/perm` command that would clear existing rows, listing the rows and offering Confirm and Cancel.
+  - `/perm undo`: restore the rows a wildcard command cleared, using the audit log entries it wrote.
+  - Show stored text (audit notes, keys and patterns containing `*`) in Discord with the characters escaped or in code formatting, so an asterisk is not read as Markdown italics.
 
 ---
 
@@ -1181,6 +1187,8 @@ Friend A can use only `cat.view` among the overridable keys. Friend B can use ev
 
 - The `UNIQUE` rule means a second grant or deny on the same key overwrites the first row.
 - A wildcard command runs in one transaction: it deletes the person's exact rows that the wildcard covers, writes the wildcard row, writes one audit row per change, and returns the list of cleared rows for the bot's reply.
+- A command on `*` also removes the person's `area.*` rows in the same server scope, because those rows sit beneath `*` in the check order.
+- A wildcard command that would clear existing rows can show them first and ask for confirmation (the command layer reads them with `find_covered_overrides`). For a reversible way to shut a person off, use `/block`, which leaves override rows untouched.
 - Broad command first, exceptions after: `/perm deny feed.*` then `/perm grant feed.remove` leaves `feed.*` deny and `feed.remove` allow. The reverse order leaves only `feed.*` deny.
 - There is no foreign key to `users`, because a level-0 person has override rows and no `users` row.
 - `/perm show @x` displays the expanded result for every key, with the row or level that decided it ("Decided by" column), computed with the same lookup the real check uses.
@@ -1204,6 +1212,7 @@ CREATE TABLE blocks (
 - `all`: conversation and every command are refused, apart from protected keys (1.2).
 - One block per person per server. Choosing another kind overwrites the row.
 - A person can have a global row and a server row at once. Both apply, and the stricter kind wins (`all` over `chat`), so a block set in one server never loosens a global block. To block someone in one server only, set the block in that server and leave no global row.
+- Removing a global block removes only the global row, and removing a block in one server removes only that server's row. The `/unblock` reply lists the block rows that remain.
 - A block never touches override rows, so `/unblock` restores the person exactly as they were.
 - A blocked person's messages, and those of a person with a `chat.talk` deny override, are dropped in the intake guards, before classification: no reply, no reaction, no mood, relationship, trait, or memory writes, and no place in sessions or batches. Stored data stays.
 - A slash command that is refused returns an ephemeral line from the fixed `denied` pool (3.9), or "You don't have permission for that." until that pool is built. Discord requires a response to every command.
@@ -1231,7 +1240,7 @@ CREATE INDEX audit_log_target ON audit_log (target_id, logged_at);
 ```
 
 - `kind` is `level`, `override`, `block`, `setting`, `photo` (a removed photo, 2.4), `memory` (a deleted memory, without its text, 9.16), `relationship` (an owner change, 3.4), or `nickname` (a change to someone else's list, 3.6), or `say` (a message posted with `/say`, 3.18). More kinds will follow (event resets). The column has no `CHECK` rule because SQLite cannot change one without rebuilding the table, so the code validates kinds from a constant list.
-- Empty `old_value` or `new_value` means "no row".
+- A NULL `old_value` or `new_value` means "no row".
 - A wildcard command writes one row for the wildcard and one row for each exact row it clears (note: "cleared by `/perm deny *`"). `/perm history @x` lists everything that happened to one person.
 - The change and its audit row are written in one transaction.
 - Retention: keep everything.

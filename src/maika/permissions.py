@@ -183,6 +183,10 @@ class PermissionRegistry:
         except KeyError:
             raise UnknownPermissionKeyError(key) from None
 
+    def has_area(self, area: str) -> bool:
+        """Return True when at least one key is in ``area``."""
+        return any(_key_area(key) == area for key in self._keys)
+
 
 class DecisionSource(enum.Enum):
     """Which step of the check decided."""
