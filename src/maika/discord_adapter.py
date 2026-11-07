@@ -16,10 +16,10 @@ from collections.abc import Callable
 
 import discord
 
-from maika import usage_log
 from maika.command_runner import (
     FAILURE_MESSAGE,
     CommandContext,
+    CommandUsage,
     run_command,
 )
 from maika.commands import CommandDefinition, CommandRegistry, Visibility
@@ -106,9 +106,11 @@ async def handle_command(
     owner_id: int,
     command_name: str,
     function: Callable[[], CommandResult],
+    log_usage: Callable[[CommandUsage], None],
 ) -> None:
     """Run one slash command and send its reply.
 
+    ``log_usage`` receives the usage record (see ``run_command``).
     Every slash-command callback calls this. ``run_command`` is
     synchronous and blocks the event loop while it runs, so it must
     stay fast: Discord requires a reply within 3 seconds.
@@ -121,7 +123,7 @@ async def handle_command(
         command_name=command_name,
         context=context,
         function=function,
-        log_usage=usage_log.log_usage,
+        log_usage=log_usage,
     )
     definition = registry.get(command_name)
     await send_result(interaction, definition, result)

@@ -12,6 +12,9 @@ checks the level, picks the channel and puts the line on a bounded
 queue. ``LogRouter.run`` sends the queued lines one at a time. A
 failed send is logged on the console only, never posted again to
 Discord, so a broken log channel cannot cause a loop of error posts.
+
+``RouterLogHandler`` forwards warnings and errors from the ``maika``
+logger to the ``#errors`` stream.
 """
 
 import asyncio
@@ -19,15 +22,23 @@ import enum
 import logging
 import sqlite3
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 
 from maika.foundation_settings import build_foundation_registry
-from maika.log_names import LOGGER_NAME
 from maika.settings_store import get_value
 
-logger = logging.getLogger(LOGGER_NAME)
+# A child of the "maika" logger, so its records reach the console.
+# RouterLogHandler ignores this logger's records, so a failing log
+# channel cannot feed its own failures back into the queue.
+logger = logging.getLogger(__name__)
 
 SETTINGS = build_foundation_registry()
+
+# The lowest record level RouterLogHandler forwards to #errors.
+FORWARDED_RECORD_LEVEL = logging.WARNING
+
+# Replaces each secret (such as the token) in a forwarded line.
+REDACTED_TEXT = "[redacted]"
 
 CHANNEL_KEY_PREFIX = "log.channel."
 LEVEL_KEY_PREFIX = "log.level."
@@ -43,6 +54,11 @@ LOG_DRAIN_SECONDS = 5
 DISCORD_MESSAGE_LIMIT = 2000
 
 TRUNCATION_MARK = "…"
+
+NO_CHANNEL_WARNING = (
+    "No log channel is set. Set LOG_CHANNEL_ID in .env or "
+    "log.channel.bot_log; log lines are not posted to Discord."
+)
 
 type SendFunction = Callable[[int, str], Awaitable[None]]
 
@@ -152,6 +168,16 @@ class LogRouter:
 
         self._enqueue(channel_id, truncate_line(text))
 
+    def warn_if_no_channel(self) -> None:
+        """Log a console warning when #bot-log has no channel.
+
+        With no ``log.channel.bot_log`` setting and no
+        ``LOG_CHANNEL_ID``, no stream can resolve a channel, so no log
+        line reaches Discord. The bot calls this once at startup.
+        """
+        if self._resolve_channel(LogStream.BOT_LOG) is None:
+            logger.warning(NO_CHANNEL_WARNING)
+
     async def run(self) -> None:
         """Send queued lines one at a time until ``close`` ends this.
 
@@ -257,3 +283,73 @@ class LogRouter:
             logger.exception(
                 "Sending a log line to channel %d failed.", channel_id
             )
+
+
+def _is_router_record(record: logging.LogRecord) -> bool:
+    """Return True for a record from the log router's own logger."""
+    return record.name == logger.name or record.name.startswith(
+        logger.name + "."
+    )
+
+
+def _level_for_record(record: logging.LogRecord) -> LogLevel:
+    """Return the LogLevel for a record: ERROR and above, or WARNING."""
+    if record.levelno >= logging.ERROR:
+        return LogLevel.ERROR
+    return LogLevel.WARNING
+
+
+class RouterLogHandler(logging.Handler):
+    """Forward warnings and errors to the ``#errors`` log stream.
+
+    It is used on the event-loop thread only, because ``LogRouter``
+    is not thread-safe.
+
+    Records of ``FORWARDED_RECORD_LEVEL`` and above are posted to
+    ``LogStream.ERRORS``: WARNING as ``LogLevel.WARNING``, ERROR and
+    CRITICAL as ``LogLevel.ERROR``. The line holds the logger name
+    and the message, and for an exception only its class name and
+    message; the traceback stays on the console.
+
+    Records from the log router's own logger are ignored, and so is
+    any record logged while a forward is already under way (for
+    example a settings warning raised by the router's own lookup).
+    Each secret given (such as the token) is replaced with
+    ``REDACTED_TEXT``. The handler never raises.
+    """
+
+    def __init__(self, router: LogRouter, secrets: Iterable[str] = ()) -> None:
+        """Store the router and the secrets to hide."""
+        super().__init__(level=FORWARDED_RECORD_LEVEL)
+        self._router = router
+        self._secrets = tuple(secret for secret in secrets if secret)
+        self._forwarding = False
+
+    def format_line(self, record: logging.LogRecord) -> str:
+        """Return the forwarded text for a record, secrets hidden."""
+        text = f"{record.name}: {record.getMessage()}"
+        if record.exc_info is not None:
+            error = record.exc_info[1]
+            if error is not None:
+                text += f"\n{type(error).__name__}: {error}"
+        for secret in self._secrets:
+            text = text.replace(secret, REDACTED_TEXT)
+        return text
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Post a record to the #errors stream, never raising."""
+        if self._forwarding or _is_router_record(record):
+            return
+        self._forwarding = True
+        try:
+            self._router.post(
+                LogStream.ERRORS,
+                _level_for_record(record),
+                self.format_line(record),
+            )
+        except Exception:
+            # The standard logging fallback: it prints to stderr and
+            # does not raise.
+            self.handleError(record)
+        finally:
+            self._forwarding = False

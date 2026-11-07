@@ -727,7 +727,7 @@ Slash commands and sentences are two front ends to one function (for example `ad
 
 **Log channels (private server).** Eight log streams, each mapped to a channel by a setting. A stream with no channel set falls back to `#bot-log`, so channels can be created as their features arrive, and merged or split later with no code change. Each stream has a log-level setting.
 - `#bot-log`: startup and shutdown, settings changes, command usage. Command usage lines for protected keys (`/memories`, `/forget`) are written at `debug` level, so they appear only when the stream's level is lowered and repeated use cannot flood the channel; deletions are also recorded in `audit_log` (9.5).
-- `#errors`: exceptions and failed fetches.
+- `#errors`: exceptions and failed fetches. Warnings and errors logged by the bot's own code are forwarded here with the logger name, the message, and the exception class and message; the traceback stays on the console.
 - `#permissions`: level, override, and block changes (a readable copy of the `audit_log` entries).
 - `#feeds`: what was posted and where.
 - `#decisions` (testing period): for each message in a listened channel, the addressing signals, score, and action. Read-only. A wrong call is fixed by adjusting settings with `/config`, and the logged signals are replayed through the decision function to confirm.
@@ -1113,6 +1113,8 @@ Ideas not yet scheduled:
 - Per-result reply visibility: a command with an owner-only part (`/mood set`, the raw mood numbers, `/relationship set`; 1.5) needs its result to request an ephemeral reply. Add that when the first such command is built.
 - `/config get` reads the foundation settings registry held in `config_commands`. When the first feature adds settings (build step 2), build one combined settings registry, like the command registry, and pass it in.
 - Owner-only commands appear in Discord's command picker for everyone. Decide at friend-server go-live whether to set `default_member_permissions` on the owner groups. The permission check stays the real guard, and server admins can change a command's visibility per server in Integrations.
+- Warnings and errors from discord.py itself (gateway problems, rate limits) stay on the console. Forwarding them to `#errors` needs filtering, because reconnects are routine.
+- `discord.utils.escape_markdown` triggers a DeprecationWarning on Python 3.14 (it passes `count` to `re.sub` positionally). Recheck after the next discord.py upgrade.
 
 ---
 

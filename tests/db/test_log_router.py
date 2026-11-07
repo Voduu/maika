@@ -175,7 +175,7 @@ def test_no_channel_sends_nothing(migrated_db, caplog):
     records = [r for r in caplog.records if "No log channel" in r.message]
     assert len(records) == 1
     assert records[0].levelno == logging.DEBUG
-    assert records[0].name == "maika"
+    assert records[0].name == "maika.log_router"
 
 
 # Truncation
