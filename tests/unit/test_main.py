@@ -1,4 +1,5 @@
 import logging
+import sqlite3
 from pathlib import Path
 from unittest import mock
 
@@ -14,6 +15,46 @@ PROBLEMS = [
     "DISCORD_TOKEN is required but is empty.",
     "OWNER_ID must be a positive integer up to 9223372036854775807.",
 ]
+REAL_MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
+FOUNDATION_TABLES = {
+    "users",
+    "permission_overrides",
+    "blocks",
+    "audit_log",
+    "settings",
+    "cooldowns",
+    "bot_state",
+}
+
+
+def make_config(database_path):
+    return Config(
+        environment=Environment.TEST,
+        discord_token=TOKEN,
+        owner_id=1,
+        listen_channels=(),
+        log_channel_id=None,
+        database_path=database_path,
+    )
+
+
+@pytest.fixture(autouse=True)
+def real_migrations(monkeypatch):
+    # Use an absolute path so the tests do not depend on the folder
+    # pytest is started from.
+    monkeypatch.setattr(entry, "MIGRATIONS_DIR", REAL_MIGRATIONS_DIR)
+
+
+@pytest.fixture
+def database_path(tmp_path):
+    return tmp_path / "data" / "maika.db"
+
+
+@pytest.fixture
+def valid_config(monkeypatch, database_path):
+    config = make_config(database_path)
+    monkeypatch.setattr(entry, "load_config_from_env", lambda: config)
+    return config
 
 
 @pytest.fixture
@@ -30,6 +71,9 @@ def client_class(monkeypatch):
     fake = mock.Mock()
     monkeypatch.setattr(entry, "MaikaClient", fake)
     return fake
+
+
+# Configuration errors
 
 
 def test_config_error_returns_1(config_error, client_class):
@@ -58,23 +102,142 @@ def test_config_error_does_not_connect(config_error, client_class):
     client_class.assert_not_called()
 
 
-@pytest.fixture
-def login_failure(monkeypatch):
-    config = Config(
-        environment=Environment.TEST,
-        discord_token=TOKEN,
-        owner_id=1,
-        listen_channels=(),
-        log_channel_id=None,
-        database_path=Path("unused.db"),
-    )
+# Database startup
 
+
+def test_logger_has_fixed_name():
+    assert entry.logger.name == "maika"
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_err"),
+    [
+        (
+            PermissionError(13, "Permission denied", "/srv/data/maika.db"),
+            "Maika cannot start. [Errno 13] Permission denied: "
+            "'/srv/data/maika.db'\n",
+        ),
+        (
+            FileNotFoundError(2, "No such file or directory", "migrations"),
+            "Maika cannot start. [Errno 2] No such file or directory: "
+            "'migrations'\n",
+        ),
+        (
+            OSError("no file name here"),
+            "Maika cannot start. no file name here\n",
+        ),
+        (
+            sqlite3.OperationalError("database is locked"),
+            "Maika cannot start. database is locked\n",
+        ),
+    ],
+    ids=[
+        "permission-error",
+        "file-not-found",
+        "oserror-no-filename",
+        "sqlite-operational",
+    ],
+)
+def test_startup_os_and_sqlite_errors(
+    monkeypatch, valid_config, client_class, capsys, error, expected_err
+):
+    def raise_error(database_path, now):
+        raise error
+
+    monkeypatch.setattr(entry, "prepare_database", raise_error)
+
+    assert entry.main() == 1
+
+    captured = capsys.readouterr()
+    assert captured.err == expected_err
+    assert TOKEN not in captured.err
+    client_class.assert_not_called()
+
+
+def test_main_creates_database_and_tables(
+    valid_config, client_class, database_path, caplog
+):
+    caplog.set_level(logging.INFO)
+
+    assert entry.main() == 0
+
+    assert database_path.exists()
+    connection = sqlite3.connect(database_path)
+    tables = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+    versions = connection.execute(
+        "SELECT version FROM schema_migrations"
+    ).fetchall()
+    connection.close()
+    assert FOUNDATION_TABLES <= tables
+    assert versions == [(1,)]
+    applied_records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "Applied migration 0001 (foundation)."
+    ]
+    assert len(applied_records) == 1
+    assert applied_records[0].name == "maika"
+    client_class.assert_called_once_with(valid_config)
+
+
+def test_migration_error_returns_1_without_client(
+    tmp_path, monkeypatch, valid_config, client_class, capsys
+):
+    bad_dir = tmp_path / "bad_migrations"
+    bad_dir.mkdir()
+    (bad_dir / "0001_broken.sql").write_text(
+        "CREATE TABLE a (x INTEGER);\nINSERT INTO missing VALUES (1);\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(entry, "MIGRATIONS_DIR", bad_dir)
+
+    assert entry.main() == 1
+
+    captured = capsys.readouterr()
+    assert "Migration 0001" in captured.err
+    assert "missing" in captured.err
+    assert TOKEN not in captured.err
+    client_class.assert_not_called()
+
+
+def test_database_closed_before_client_runs(
+    monkeypatch, valid_config, client_class
+):
+    opened = []
+    real_open = entry.open_database
+
+    def recording_open(path):
+        connection = real_open(path)
+        opened.append(connection)
+        return connection
+
+    def check_closed(*args, **kwargs):
+        with pytest.raises(sqlite3.ProgrammingError):
+            opened[0].execute("SELECT 1")
+
+    monkeypatch.setattr(entry, "open_database", recording_open)
+    client_class.return_value.run.side_effect = check_closed
+
+    assert entry.main() == 0
+    assert len(opened) == 1
+    client_class.return_value.run.assert_called_once()
+
+
+# Login failure
+
+
+@pytest.fixture
+def login_failure(monkeypatch, valid_config):
     def raise_login_failure(self, token, **kwargs):
         # The token is in the message so the test shows it is not
         # passed on to the console.
         raise discord.LoginFailure(f"Improper token: {token}")
 
-    monkeypatch.setattr(entry, "load_config_from_env", lambda: config)
     monkeypatch.setattr(MaikaClient, "run", raise_login_failure)
 
 
