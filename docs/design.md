@@ -1316,6 +1316,7 @@ CREATE TABLE bot_state (
 ```
 
 - Keys so far: `heartbeat` (updated each minute; the startup comparison measures downtime), `first_boot`, `last_seen_old_account`. The mood state is `mood.energy`, `mood.happiness`, `mood.baseline_energy`, `mood.baseline_happiness`, `mood.updated_at`, and `mood.reroll_at`, and the post-wake sleepy counter is `sleep.groggy_remaining` and `sleep.groggy_until` (9.14). The sleep state keys are `sleep.state` (`awake` or `asleep`), `sleep.wake_at` (planned wake time while asleep), `sleep.override_until` (set by `/wake`; she stays awake until the next scheduled sleep window), `sleep.early_woken` (1 after an early wake, cleared at the planned wake time), and `sleep.catchup_from` (the time after which the wake-time catch-up reads messages, 3.12). A new key needs no migration.
+- To clear a key, delete its row with `delete_state`. An empty value is never used to mean "cleared"; a missing row means the key is not set (for example `sleep.early_woken` after the planned wake time).
 - Kept apart from `settings` because settings are values the owner tunes, and each change creates an audit entry and a log post. A heartbeat every minute would add 1,440 audit rows per day and put values in `/config list` that nobody should edit.
 
 ### 9.9 `schema_migrations` and migrations
