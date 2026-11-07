@@ -100,9 +100,9 @@ def run_command(
     A refusal returns a DENIED failure without calling ``function``.
     A crash in the permission check returns an OTHER failure, with no
     call and no usage record, because no decision was made.
-    Every call, protected keys included, produces one CommandUsage
-    for ``log_usage``; a crash in ``log_usage`` is logged and does
-    not change the result.
+    Every call that reaches a permission decision, protected keys
+    included, produces one CommandUsage for ``log_usage``; a crash in
+    ``log_usage`` is logged and does not change the result.
 
     Raise UnknownCommandError for an unknown command name, which is
     a programming error.

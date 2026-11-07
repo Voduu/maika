@@ -1111,6 +1111,8 @@ Ideas not yet scheduled:
   - Show stored text (audit notes, keys and patterns containing `*`) in Discord with the characters escaped or in code formatting, so an asterisk is not read as Markdown italics.
 - `run_command` is synchronous. Add an async variant that shares the permission and logging code when the first command needs to `await` (for example a network check).
 - Per-result reply visibility: a command with an owner-only part (`/mood set`, the raw mood numbers, `/relationship set`; 1.5) needs its result to request an ephemeral reply. Add that when the first such command is built.
+- `/config get` reads the foundation settings registry held in `config_commands`. When the first feature adds settings (build step 2), build one combined settings registry, like the command registry, and pass it in.
+- Owner-only commands appear in Discord's command picker for everyone. Decide at friend-server go-live whether to set `default_member_permissions` on the owner groups. The permission check stays the real guard, and server admins can change a command's visibility per server in Integrations.
 
 ---
 

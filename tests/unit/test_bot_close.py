@@ -6,6 +6,7 @@ from unittest import mock
 import discord
 
 from maika.bot import MaikaClient
+from maika.command_catalog import build_command_registry
 from maika.config import Config, Environment
 
 LOG_CHANNEL_ID = 1234
@@ -21,7 +22,11 @@ def make_client():
         log_channel_id=LOG_CHANNEL_ID,
         database_path=Path("unused.db"),
     )
-    client = MaikaClient(config)
+    client = MaikaClient(
+        config,
+        connection=mock.Mock(),
+        command_registry=build_command_registry(),
+    )
     channel = mock.AsyncMock(spec=discord.TextChannel)
     client.get_channel = mock.Mock(return_value=channel)
     return client, channel

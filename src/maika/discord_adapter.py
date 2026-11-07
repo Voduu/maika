@@ -29,6 +29,13 @@ from maika.results import CommandResult, FailureKind
 logger = logging.getLogger(__name__)
 
 
+def guild_id_from_interaction(interaction: discord.Interaction) -> int:
+    """Return the interaction's guild ID, or GLOBAL_GUILD_ID in a DM."""
+    if interaction.guild_id is None:
+        return GLOBAL_GUILD_ID
+    return interaction.guild_id
+
+
 def context_from_interaction(
     interaction: discord.Interaction,
 ) -> CommandContext:
@@ -42,12 +49,9 @@ def context_from_interaction(
     """
     if interaction.channel_id is None:
         raise ValueError("The interaction has no channel ID.")
-    guild_id = interaction.guild_id
-    if guild_id is None:
-        guild_id = GLOBAL_GUILD_ID
     return CommandContext(
         user_id=interaction.user.id,
-        guild_id=guild_id,
+        guild_id=guild_id_from_interaction(interaction),
         channel_id=interaction.channel_id,
         now=int(interaction.created_at.timestamp()),
     )

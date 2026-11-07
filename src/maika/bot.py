@@ -1,18 +1,25 @@
-"""The Discord client: connect, and post startup and shutdown lines.
+"""The Discord client: commands, startup and shutdown lines.
 
-The startup and shutdown lines go to ``#bot-log`` (design section
-3.18). The channel comes from ``LOG_CHANNEL_ID`` in ``.env`` (design
-section 5). Posting a log line is best effort: a missing channel or a
-failed post is logged to the console and never stops the bot.
+The slash commands are added to the command tree and synced once in
+``setup_hook``. The startup and shutdown lines go to ``#bot-log``
+(design section 3.18). The channel comes from ``LOG_CHANNEL_ID`` in
+``.env`` (design section 5). Posting a log line is best effort: a
+missing channel or a failed post is logged to the console and never
+stops the bot.
 """
 
 import asyncio
 import logging
+import sqlite3
 
 import discord
+from discord import app_commands
 
 import maika
+from maika.commands import CommandRegistry
 from maika.config import Config
+from maika.discord_adapter import handle_tree_error
+from maika.slash_commands import build_config_group
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +53,51 @@ def build_intents() -> discord.Intents:
 class MaikaClient(discord.Client):
     """The Discord client for Maika."""
 
-    def __init__(self, config: Config) -> None:
-        """Store the config and set up the client with its intents."""
+    def __init__(
+        self,
+        config: Config,
+        *,
+        connection: sqlite3.Connection,
+        command_registry: CommandRegistry,
+    ) -> None:
+        """Store the config, database and commands, and set up intents.
+
+        The connection is used only on the event-loop thread. The
+        caller owns it and closes it after the client stops.
+        """
         super().__init__(intents=build_intents())
         self.config = config
+        self.connection = connection
+        self.command_registry = command_registry
+        self.tree = app_commands.CommandTree(self)
         # Set by the first ready event. It keeps the startup line to
         # one post per run, and close() reads it to skip the shutdown
         # line when the bot never got that far.
         self._reached_first_ready = False
         self._shutdown_line_sent = False
+
+    async def setup_hook(self) -> None:
+        """Add the slash commands to the tree and sync them once.
+
+        A failed sync is logged and the bot keeps running; Discord
+        keeps the commands from the last successful sync.
+        """
+        self.tree.add_command(
+            build_config_group(
+                connection=self.connection,
+                registry=self.command_registry,
+                owner_id=self.config.owner_id,
+            )
+        )
+        self.tree.error(handle_tree_error)
+        try:
+            synced = await self.tree.sync()
+        except discord.HTTPException:
+            logger.exception("Syncing the slash commands failed.")
+            return
+        count = len(synced)
+        noun = "command" if count == 1 else "commands"
+        logger.info("Synced %d slash %s.", count, noun)
 
     async def on_ready(self) -> None:
         """Post the startup line on the first ready event only.
