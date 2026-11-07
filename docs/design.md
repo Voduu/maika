@@ -1203,6 +1203,7 @@ CREATE TABLE blocks (
 - `chat`: the bot does not converse with the person (`chat.talk` refused). Commands work.
 - `all`: conversation and every command are refused, apart from protected keys (1.2).
 - One block per person per server. Choosing another kind overwrites the row.
+- A person can have a global row and a server row at once. Both apply, and the stricter kind wins (`all` over `chat`), so a block set in one server never loosens a global block. To block someone in one server only, set the block in that server and leave no global row.
 - A block never touches override rows, so `/unblock` restores the person exactly as they were.
 - A blocked person's messages, and those of a person with a `chat.talk` deny override, are dropped in the intake guards, before classification: no reply, no reaction, no mood, relationship, trait, or memory writes, and no place in sessions or batches. Stored data stays.
 - A slash command that is refused returns an ephemeral line from the fixed `denied` pool (3.9), or "You don't have permission for that." until that pool is built. Discord requires a response to every command.
