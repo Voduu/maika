@@ -1096,6 +1096,11 @@ Ideas not yet scheduled:
   - Audio source is the main decision. Streaming from YouTube conflicts with YouTube's terms of service; Groovy and Rythm, two large Discord music bots, shut down in 2021 after Google demanded it. A local music library on the Unraid array avoids that, with search over file metadata.
   - Commands would follow the registry pattern (1.2) with their own keys, for example `music.play`, `music.skip`, `music.queue`, and a request could also come through the conversational lane ("play X").
   - Needs a queue per server, a leave-when-alone rule, and a rule for who may control playback.
+- Settings mechanism follow-ups (build step 1):
+  - Connect `backups.migration_copies` to `MIGRATION_BACKUPS_KEPT` in `migrate.py` when settings are wired into the backup code.
+  - A JSON setting's default is a mutable dict or list; copy it on read when the first JSON setting is defined.
+  - STR_LIST accepts empty strings and repeated items; decide the rules when `addressing.names` is wired up.
+  - Weight lists (comma-separated `value:percent` text, section 10 introduction) have no setting type yet; add one or keep them as TEXT with their own checks when the first such setting arrives.
 
 ---
 
