@@ -36,13 +36,27 @@ from maika.discord_adapter import (
 )
 from maika.log_router import LogLevel, LogRouter, LogStream
 from maika.perm_commands import (
+    PERM_DENY_NAME,
+    PERM_GRANT_NAME,
     PERM_LEVEL_NAME,
+    PERM_RESET_NAME,
     PERM_SHOW_NAME,
+    SCOPE_OPTION_EVERYWHERE,
+    SCOPE_OPTION_SERVER,
     level_name,
+    perm_deny,
+    perm_grant,
     perm_level,
+    perm_reset,
     perm_show,
 )
-from maika.permissions import Level
+from maika.permissions import (
+    KEY_SEPARATOR,
+    WILDCARD,
+    Level,
+    PermissionRegistry,
+)
+from maika.results import CommandResult
 from maika.settings import SettingsRegistry
 
 type Choices = list[app_commands.Choice[str]]
@@ -81,11 +95,24 @@ PERM_SHOW_SUBCOMMAND = "show"
 PERM_SHOW_DESCRIPTION = "Show what a person may use, and what decided it"
 PERM_USER_DESCRIPTION = "The person"
 PERM_LEVEL_PARAMETER_DESCRIPTION = "The new level"
+PERM_GRANT_SUBCOMMAND = "grant"
+PERM_GRANT_DESCRIPTION = "Allow a person a key, whatever their level"
+PERM_DENY_SUBCOMMAND = "deny"
+PERM_DENY_DESCRIPTION = "Deny a person a key, whatever their level"
+PERM_RESET_SUBCOMMAND = "reset"
+PERM_RESET_DESCRIPTION = "Remove a person's exception for a key"
+PERM_KEY_DESCRIPTION = "A permission key, area.* or *"
+PERM_SCOPE_DESCRIPTION = "Where it applies (default: Everywhere)"
 
 # One choice per level, named as the levels are shown in replies.
 LEVEL_CHOICES = [
     app_commands.Choice(name=level_name(level), value=level.value)
     for level in Level
+]
+
+SCOPE_CHOICES = [
+    app_commands.Choice(name="Everywhere", value=SCOPE_OPTION_EVERYWHERE),
+    app_commands.Choice(name="This server", value=SCOPE_OPTION_SERVER),
 ]
 
 
@@ -145,6 +172,62 @@ def category_choices(registry: SettingsRegistry, current: str) -> Choices:
         app_commands.Choice(name=name, value=name)
         for name in names[:AUTOCOMPLETE_CHOICE_LIMIT]
     ]
+
+
+def permission_patterns(registry: PermissionRegistry) -> tuple[str, ...]:
+    """Return every pattern that can carry an exception, sorted.
+
+    That is each key that is neither owner-only nor protected,
+    ``area.*`` for each area with such a key, and ``*``. Owner-only
+    keys and areas and protected keys are decided before overrides,
+    so they are left out. Sorting puts ``*`` first and each
+    ``area.*`` before the keys in its area.
+    """
+    keys = [
+        key
+        for key in registry.keys()
+        if not registry.get(key).owner_only and not registry.get(key).protected
+    ]
+    areas = {key.split(KEY_SEPARATOR, maxsplit=1)[0] for key in keys}
+    wildcards = {f"{area}{KEY_SEPARATOR}{WILDCARD}" for area in areas}
+    return tuple(sorted({*keys, *wildcards, WILDCARD}))
+
+
+def permission_pattern_choices(
+    registry: PermissionRegistry, current: str
+) -> Choices:
+    """Return the patterns that contain the typed text.
+
+    The match ignores case, and at most ``AUTOCOMPLETE_CHOICE_LIMIT``
+    patterns are returned in ``permission_patterns`` order. The name
+    and value of each choice are the pattern.
+    """
+    text = current.strip().lower()
+    patterns = [
+        pattern
+        for pattern in permission_patterns(registry)
+        if text in pattern.lower()
+    ]
+    return [
+        app_commands.Choice(name=pattern, value=pattern)
+        for pattern in patterns[:AUTOCOMPLETE_CHOICE_LIMIT]
+    ]
+
+
+def owner_permission_autocomplete(
+    owner_id: int, registry: PermissionRegistry
+) -> AutocompleteFunction:
+    """Return a pattern autocomplete that answers the owner only."""
+
+    async def autocomplete(
+        interaction: discord.Interaction, current: str
+    ) -> Choices:
+        """Return the pattern choices for the owner, or none."""
+        if interaction.user.id != owner_id:
+            return []
+        return permission_pattern_choices(registry, current)
+
+    return autocomplete
 
 
 def owner_autocomplete(
@@ -374,6 +457,128 @@ def build_perm_group(
                 guild_id=guild_id,
             ),
             log_usage=log_usage,
+        )
+
+    permission_registry = registry.permission_registry()
+    pattern_autocomplete = owner_permission_autocomplete(
+        owner_id, permission_registry
+    )
+
+    async def run_override_command(
+        interaction: discord.Interaction,
+        *,
+        command_name: str,
+        change: Callable[..., CommandResult],
+        user: discord.User,
+        key: str,
+        scope: app_commands.Choice[str] | None,
+    ) -> None:
+        """Run grant, deny or reset through handle_command.
+
+        With no scope chosen, the row applies everywhere.
+        """
+        context = context_from_interaction(interaction)
+        scope_value = SCOPE_OPTION_EVERYWHERE
+        if scope is not None:
+            scope_value = scope.value
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=command_name,
+            function=lambda: change(
+                connection,
+                permission_registry,
+                target_id=user.id,
+                target_is_bot=user.bot,
+                key=key,
+                scope=scope_value,
+                owner_id=owner_id,
+                actor_id=context.user_id,
+                guild_id=context.guild_id,
+                now=context.now,
+                announce=announce,
+            ),
+            log_usage=log_usage,
+        )
+
+    @group.command(
+        name=PERM_GRANT_SUBCOMMAND, description=PERM_GRANT_DESCRIPTION
+    )
+    @app_commands.describe(
+        user=PERM_USER_DESCRIPTION,
+        key=PERM_KEY_DESCRIPTION,
+        scope=PERM_SCOPE_DESCRIPTION,
+    )
+    @app_commands.choices(scope=SCOPE_CHOICES)
+    @app_commands.autocomplete(key=pattern_autocomplete)
+    async def perm_grant_command(
+        interaction: discord.Interaction,
+        user: discord.User,
+        key: str,
+        scope: app_commands.Choice[str] | None = None,
+    ) -> None:
+        """Run /perm grant."""
+        await run_override_command(
+            interaction,
+            command_name=PERM_GRANT_NAME,
+            change=perm_grant,
+            user=user,
+            key=key,
+            scope=scope,
+        )
+
+    @group.command(
+        name=PERM_DENY_SUBCOMMAND, description=PERM_DENY_DESCRIPTION
+    )
+    @app_commands.describe(
+        user=PERM_USER_DESCRIPTION,
+        key=PERM_KEY_DESCRIPTION,
+        scope=PERM_SCOPE_DESCRIPTION,
+    )
+    @app_commands.choices(scope=SCOPE_CHOICES)
+    @app_commands.autocomplete(key=pattern_autocomplete)
+    async def perm_deny_command(
+        interaction: discord.Interaction,
+        user: discord.User,
+        key: str,
+        scope: app_commands.Choice[str] | None = None,
+    ) -> None:
+        """Run /perm deny."""
+        await run_override_command(
+            interaction,
+            command_name=PERM_DENY_NAME,
+            change=perm_deny,
+            user=user,
+            key=key,
+            scope=scope,
+        )
+
+    @group.command(
+        name=PERM_RESET_SUBCOMMAND, description=PERM_RESET_DESCRIPTION
+    )
+    @app_commands.describe(
+        user=PERM_USER_DESCRIPTION,
+        key=PERM_KEY_DESCRIPTION,
+        scope=PERM_SCOPE_DESCRIPTION,
+    )
+    @app_commands.choices(scope=SCOPE_CHOICES)
+    @app_commands.autocomplete(key=pattern_autocomplete)
+    async def perm_reset_command(
+        interaction: discord.Interaction,
+        user: discord.User,
+        key: str,
+        scope: app_commands.Choice[str] | None = None,
+    ) -> None:
+        """Run /perm reset."""
+        await run_override_command(
+            interaction,
+            command_name=PERM_RESET_NAME,
+            change=perm_reset,
+            user=user,
+            key=key,
+            scope=scope,
         )
 
     return group
