@@ -23,7 +23,7 @@ from maika.config import Config
 from maika.discord_adapter import handle_tree_error
 from maika.log_names import LOGGER_NAME
 from maika.log_router import LogLevel, LogRouter, LogStream, RouterLogHandler
-from maika.slash_commands import build_config_group
+from maika.slash_commands import build_config_group, build_perm_group
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,15 @@ class MaikaClient(discord.Client):
         self._start_log_router()
         self.tree.add_command(
             build_config_group(
+                connection=self.connection,
+                registry=self.command_registry,
+                owner_id=self.config.owner_id,
+                log_usage=self.log_usage,
+                log_router=self.log_router,
+            )
+        )
+        self.tree.add_command(
+            build_perm_group(
                 connection=self.connection,
                 registry=self.command_registry,
                 owner_id=self.config.owner_id,

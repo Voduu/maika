@@ -11,6 +11,7 @@ from maika.config_commands import (
     CONFIG_RESET_COMMAND,
     CONFIG_SET_COMMAND,
 )
+from maika.perm_commands import PERM_LEVEL_COMMAND, PERM_SHOW_COMMAND
 
 
 def build_command_registry() -> CommandRegistry:
@@ -21,5 +22,7 @@ def build_command_registry() -> CommandRegistry:
             CONFIG_SET_COMMAND,
             CONFIG_RESET_COMMAND,
             CONFIG_LIST_COMMAND,
+            PERM_LEVEL_COMMAND,
+            PERM_SHOW_COMMAND,
         ]
     )

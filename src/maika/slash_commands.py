@@ -35,6 +35,14 @@ from maika.discord_adapter import (
     handle_command,
 )
 from maika.log_router import LogLevel, LogRouter, LogStream
+from maika.perm_commands import (
+    PERM_LEVEL_NAME,
+    PERM_SHOW_NAME,
+    level_name,
+    perm_level,
+    perm_show,
+)
+from maika.permissions import Level
 from maika.settings import SettingsRegistry
 
 type Choices = list[app_commands.Choice[str]]
@@ -64,6 +72,21 @@ CONFIG_LIST_DESCRIPTION = "List setting categories, or the settings in one"
 CONFIG_CATEGORY_DESCRIPTION = "A settings category, for example logging"
 CONFIG_ALL_NAME = "all"
 CONFIG_ALL_DESCRIPTION = "Include Advanced settings (default: Basic only)"
+
+PERM_GROUP_NAME = "perm"
+PERM_GROUP_DESCRIPTION = "Permission levels and checks (owner only)"
+PERM_LEVEL_SUBCOMMAND = "level"
+PERM_LEVEL_DESCRIPTION = "Set a person's permission level"
+PERM_SHOW_SUBCOMMAND = "show"
+PERM_SHOW_DESCRIPTION = "Show what a person may use, and what decided it"
+PERM_USER_DESCRIPTION = "The person"
+PERM_LEVEL_PARAMETER_DESCRIPTION = "The new level"
+
+# One choice per level, named as the levels are shown in replies.
+LEVEL_CHOICES = [
+    app_commands.Choice(name=level_name(level), value=level.value)
+    for level in Level
+]
 
 
 def _cut_choice_name(text: str) -> str:
@@ -267,6 +290,88 @@ def build_config_group(
             command_name=CONFIG_LIST_NAME,
             function=lambda: config_list(
                 connection, SETTINGS, category, show_all
+            ),
+            log_usage=log_usage,
+        )
+
+    return group
+
+
+def build_perm_group(
+    *,
+    connection: sqlite3.Connection,
+    registry: CommandRegistry,
+    owner_id: int,
+    log_usage: Callable[[CommandUsage], None],
+    log_router: LogRouter,
+) -> app_commands.Group:
+    """Return the /perm group with its subcommands.
+
+    ``log_usage`` receives each command call's usage record. Level
+    changes are announced to #permissions through ``log_router``.
+    """
+    group = app_commands.Group(
+        name=PERM_GROUP_NAME, description=PERM_GROUP_DESCRIPTION
+    )
+
+    def announce(line: str) -> None:
+        """Post a level change line to #permissions."""
+        log_router.post(LogStream.PERMISSIONS, LogLevel.INFO, line)
+
+    @group.command(
+        name=PERM_LEVEL_SUBCOMMAND, description=PERM_LEVEL_DESCRIPTION
+    )
+    @app_commands.describe(
+        user=PERM_USER_DESCRIPTION, level=PERM_LEVEL_PARAMETER_DESCRIPTION
+    )
+    @app_commands.choices(level=LEVEL_CHOICES)
+    async def perm_level_command(
+        interaction: discord.Interaction,
+        user: discord.User,
+        level: app_commands.Choice[int],
+    ) -> None:
+        """Run /perm level."""
+        context = context_from_interaction(interaction)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=PERM_LEVEL_NAME,
+            function=lambda: perm_level(
+                connection,
+                target_id=user.id,
+                target_is_bot=user.bot,
+                level=Level(level.value),
+                owner_id=owner_id,
+                actor_id=context.user_id,
+                now=context.now,
+                announce=announce,
+            ),
+            log_usage=log_usage,
+        )
+
+    @group.command(
+        name=PERM_SHOW_SUBCOMMAND, description=PERM_SHOW_DESCRIPTION
+    )
+    @app_commands.describe(user=PERM_USER_DESCRIPTION)
+    async def perm_show_command(
+        interaction: discord.Interaction, user: discord.User
+    ) -> None:
+        """Run /perm show."""
+        guild_id = guild_id_from_interaction(interaction)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=PERM_SHOW_NAME,
+            function=lambda: perm_show(
+                connection,
+                registry.permission_registry(),
+                target_id=user.id,
+                owner_id=owner_id,
+                guild_id=guild_id,
             ),
             log_usage=log_usage,
         )

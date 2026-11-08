@@ -1104,17 +1104,18 @@ Ideas not yet scheduled:
   - Weight lists (comma-separated `value:percent` text, section 10 introduction) have no setting type yet; add one or keep them as TEXT with their own checks when the first such setting arrives.
   - When `/config set` stores a value equal to the default, the reply should say so and mention `/config reset`, because an override equal to the default does not follow later default changes.
 - Command layer follow-ups (permissions):
-  - Validate that the target of `/perm` and `/block` is a real, non-bot member and that IDs are positive before calling the permission store.
+  - Validate that the target of `/perm` and `/block` is a real, non-bot user before calling the permission store. `/perm level` does this; the other commands do it when they are built.
   - `/block` and `/unblock` need a scope option (this server or everywhere); the reply lists the block rows that remain.
   - Confirm before a wildcard `/perm` command that would clear existing rows, listing the rows and offering Confirm and Cancel.
   - `/perm undo`: restore the rows a wildcard command cleared, using the audit log entries it wrote.
-  - Show stored text (audit notes, keys and patterns containing `*`) in Discord with the characters escaped or in code formatting, so an asterisk is not read as Markdown italics.
+  - Show stored text in Discord with the characters escaped or in code formatting, so an asterisk is not read as Markdown italics. Keys and patterns in `/perm show` are escaped; what remains is audit notes and the `/perm history` output.
+  - `/perm show` lists every key. Once the key list grows (about 60 keys), hide the owner-only keys by default and show them with an `all:true` option.
 - `run_command` is synchronous. Add an async variant that shares the permission and logging code when the first command needs to `await` (for example a network check).
 - Per-result reply visibility: a command with an owner-only part (`/mood set`, the raw mood numbers, `/relationship set`; 1.5) needs its result to request an ephemeral reply. Add that when the first such command is built.
 - `/config get` reads the foundation settings registry held in `config_commands`. When the first feature adds settings (build step 2), build one combined settings registry, like the command registry, and pass it in.
 - Owner-only commands appear in Discord's command picker for everyone. Decide at friend-server go-live whether to set `default_member_permissions` on the owner groups. The permission check stays the real guard, and server admins can change a command's visibility per server in Integrations.
 - Warnings and errors from discord.py itself (gateway problems, rate limits) stay on the console. Forwarding them to `#errors` needs filtering, because reconnects are routine.
-- `discord.utils.escape_markdown` triggers a DeprecationWarning on Python 3.14 (it passes `count` to `re.sub` positionally). Recheck after the next discord.py upgrade.
+- `discord.utils.escape_markdown` triggers a DeprecationWarning on Python 3.14 (it passes `count` to `re.sub` positionally). Recheck after the next discord.py upgrade. pytest ignores this one warning (pyproject.toml) so other warnings stay visible.
 - Cross-checks between settings (10.16): `/config set` refuses a change that breaks one. Build the mechanism with the first pair of settings that needs it.
 - `/config set` and `/config reset` write global rows only. Add a scope option (this server or everywhere) with the first server-scoped setting.
 
