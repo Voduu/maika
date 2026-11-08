@@ -7,6 +7,10 @@ the server row, the global row (``guild_id`` 0), then the default.
 Every change writes its row and one audit entry (kind ``setting``) in
 a single transaction. Nothing here reads the clock: the caller passes
 ``now`` in UTC Unix seconds.
+
+``set_setting_value`` and ``reset_setting_value`` are the entry points
+for ``/config set`` and ``/config reset``: they wrap ``set_value`` and
+``reset_value`` and also report the effective values before and after.
 """
 
 import logging
@@ -240,3 +244,111 @@ def reset_value(
             new_value=None,
         )
     return SettingChange(key, guild_id, old_text, None, True)
+
+
+@dataclass(frozen=True)
+class SettingWriteResult:
+    """The outcome of ``set_setting_value`` or ``reset_setting_value``.
+
+    ``changed`` is False when nothing was written. ``old_value`` and
+    ``new_value`` are the effective typed values before and after
+    (the stored value, or the default when no row applies).
+    ``is_default`` is True when ``new_value`` equals the default.
+    ``old_stored`` is True when a stored row supplied ``old_value``.
+    """
+
+    key: str
+    guild_id: int
+    changed: bool
+    old_value: Any
+    new_value: Any
+    is_default: bool
+    old_stored: bool
+
+
+def _write_result(
+    connection: sqlite3.Connection,
+    registry: SettingsRegistry,
+    definition: SettingDefinition,
+    change: SettingChange,
+    old: SettingLookup,
+) -> SettingWriteResult:
+    """Build a SettingWriteResult from a change and the old lookup."""
+    new_value = get_value(
+        connection, registry, definition.key, change.guild_id
+    )
+    return SettingWriteResult(
+        key=definition.key,
+        guild_id=change.guild_id,
+        changed=change.changed,
+        old_value=old.value,
+        new_value=new_value,
+        is_default=new_value == definition.default,
+        old_stored=old.stored,
+    )
+
+
+def set_setting_value(
+    connection: sqlite3.Connection,
+    registry: SettingsRegistry,
+    *,
+    key: str,
+    text: str,
+    guild_id: int,
+    actor_id: int,
+    now: int,
+) -> SettingWriteResult:
+    """Store a setting from typed text and report the values.
+
+    The checks and the write are those of ``set_value``: the text is
+    converted by the declared type and checked against the range or
+    choices, a server ``guild_id`` on a global-only setting is
+    refused (both raise SettingValueError), and the row and its audit
+    entry are written in one transaction. Text that stores the same as
+    the current row writes nothing.
+
+    An unknown key raises UnknownSettingError.
+    """
+    definition = registry.get(key)
+    old = lookup_value(connection, registry, key, guild_id)
+    change = set_value(
+        connection,
+        registry,
+        key,
+        text,
+        guild_id=guild_id,
+        actor_id=actor_id,
+        now=now,
+    )
+    return _write_result(connection, registry, definition, change, old)
+
+
+def reset_setting_value(
+    connection: sqlite3.Connection,
+    registry: SettingsRegistry,
+    *,
+    key: str,
+    guild_id: int,
+    actor_id: int,
+    now: int,
+) -> SettingWriteResult:
+    """Delete a setting's row so the default applies, and report it.
+
+    The delete and its audit entry are those of ``reset_value``, in
+    one transaction. With no row, nothing is written and ``changed``
+    is False. A server ``guild_id`` on a global-only setting raises
+    SettingValueError.
+
+    An unknown key raises UnknownSettingError.
+    """
+    definition = registry.get(key)
+    old = lookup_value(connection, registry, key, guild_id)
+    change = reset_value(
+        connection,
+        registry,
+        key,
+        guild_id=guild_id,
+        actor_id=actor_id,
+        now=now,
+    )
+    return _write_result(connection, registry, definition, change, old)

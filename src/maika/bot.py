@@ -106,6 +106,7 @@ class MaikaClient(discord.Client):
                 registry=self.command_registry,
                 owner_id=self.config.owner_id,
                 log_usage=self.log_usage,
+                log_router=self.log_router,
             )
         )
         self.tree.error(handle_tree_error)

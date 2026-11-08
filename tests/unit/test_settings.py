@@ -687,7 +687,7 @@ def test_foundation_registry():
 @pytest.mark.parametrize(
     ("key", "value_type", "default", "minimum", "maximum", "level"),
     [
-        ("log.channel.bot_log", ValueType.INT, None, None, None, "BASIC"),
+        ("log.channel.bot_log", ValueType.INT, None, 1, None, "BASIC"),
         ("log.level.errors", ValueType.TEXT, "info", None, None, "ADVANCED"),
         (
             "backups.time",
@@ -711,6 +711,18 @@ def test_foundation_sample_definitions(
     assert definition.minimum == minimum
     assert definition.maximum == maximum
     assert definition.level is SettingLevel[level]
+
+
+def test_foundation_log_channels_start_at_one():
+    channels = [
+        definition
+        for definition in FOUNDATION_SETTINGS
+        if definition.key.startswith("log.channel.")
+    ]
+    assert len(channels) == 8
+    for definition in channels:
+        assert definition.minimum == 1
+        assert definition.maximum is None
 
 
 def test_foundation_log_level_choices():

@@ -117,7 +117,7 @@ In Layer 2 the render step reads the canned dictionary only. Layer 3 changes tha
 
 **Rules for testability.**
 - Decision functions are pure: addressing score, disposition, trigger matching, and gating take plain data in and return a decision. The Discord layer gathers inputs and carries out outputs, so replay scripts run without Discord.
-- Command functions return a result object (success, data, a plain default message, and for a failure a kind: `denied`, `not_found`, `already_exists`, `missing_argument`, or `other`) and never final text. The command lane renders it flat: a success shows the plain message, and a failure of one of the four named kinds shows a fixed line from the matching pool in the data file (3.9), with the plain default message as the fallback. The social commands (3.9) are the exception for successes: their success line comes from a mood- and tier-keyed pool. The conversational lane passes the result to the personality renderer for an in-character reaction.
+- Command functions return a result object (success, data, a plain default message, and for a failure a kind: `denied`, `not_found`, `already_exists`, `missing_argument`, `invalid` (a rejected value), or `other`) and never final text. The command lane renders it flat: a success shows the plain message, and a failure of one of the four named kinds shows a fixed line from the matching pool in the data file (3.9), with the plain default message as the fallback. The `invalid` and `other` kinds show their plain message. The social commands (3.9) are the exception for successes: their success line comes from a mood- and tier-keyed pool. The conversational lane passes the result to the personality renderer for an in-character reaction.
 - All database access goes through one module; tests can use an in-memory database. Schema changes use numbered migration scripts from the start.
 
 ### 1.4 Reply style
@@ -1115,6 +1115,8 @@ Ideas not yet scheduled:
 - Owner-only commands appear in Discord's command picker for everyone. Decide at friend-server go-live whether to set `default_member_permissions` on the owner groups. The permission check stays the real guard, and server admins can change a command's visibility per server in Integrations.
 - Warnings and errors from discord.py itself (gateway problems, rate limits) stay on the console. Forwarding them to `#errors` needs filtering, because reconnects are routine.
 - `discord.utils.escape_markdown` triggers a DeprecationWarning on Python 3.14 (it passes `count` to `re.sub` positionally). Recheck after the next discord.py upgrade.
+- Cross-checks between settings (10.16): `/config set` refuses a change that breaks one. Build the mechanism with the first pair of settings that needs it.
+- `/config set` and `/config reset` write global rows only. Add a scope option (this server or everywhere) with the first server-scoped setting.
 
 ---
 
@@ -2368,14 +2370,14 @@ Log channels and backups (3.18, section 5).
 
 | Key | Type | Default | Range | Scope | Level | Description |
 |---|---|---|---|---|---|---|
-| `log.channel.bot_log` | int | none | - | G | Basic | Channel for #bot-log. Empty uses LOG_CHANNEL_ID from .env. |
-| `log.channel.errors` | int | none | - | G | Basic | Channel for #errors. Empty falls back to #bot-log. |
-| `log.channel.permissions` | int | none | - | G | Basic | Channel for #permissions. Empty falls back to #bot-log. |
-| `log.channel.feeds` | int | none | - | G | Basic | Channel for #feeds. Empty falls back to #bot-log. |
-| `log.channel.decisions` | int | none | - | G | Basic | Channel for #decisions. Empty falls back to #bot-log. |
-| `log.channel.persona_log` | int | none | - | G | Basic | Channel for #persona-log. Empty falls back to #bot-log. |
-| `log.channel.events` | int | none | - | G | Basic | Channel for #events. Empty falls back to #bot-log. |
-| `log.channel.memory_review` | int | none | - | G | Basic | Channel for #memory-review. Empty falls back to #bot-log. |
+| `log.channel.bot_log` | int | none | at least 1 | G | Basic | Channel for #bot-log. Empty uses LOG_CHANNEL_ID from .env. |
+| `log.channel.errors` | int | none | at least 1 | G | Basic | Channel for #errors. Empty falls back to #bot-log. |
+| `log.channel.permissions` | int | none | at least 1 | G | Basic | Channel for #permissions. Empty falls back to #bot-log. |
+| `log.channel.feeds` | int | none | at least 1 | G | Basic | Channel for #feeds. Empty falls back to #bot-log. |
+| `log.channel.decisions` | int | none | at least 1 | G | Basic | Channel for #decisions. Empty falls back to #bot-log. |
+| `log.channel.persona_log` | int | none | at least 1 | G | Basic | Channel for #persona-log. Empty falls back to #bot-log. |
+| `log.channel.events` | int | none | at least 1 | G | Basic | Channel for #events. Empty falls back to #bot-log. |
+| `log.channel.memory_review` | int | none | at least 1 | G | Basic | Channel for #memory-review. Empty falls back to #bot-log. |
 | `log.level.bot_log` | text | info | debug, info, warning, error | G | Advanced | Detail level for #bot-log. |
 | `log.level.errors` | text | info | debug, info, warning, error | G | Advanced | Detail level for #errors. |
 | `log.level.permissions` | text | info | debug, info, warning, error | G | Advanced | Detail level for #permissions. |

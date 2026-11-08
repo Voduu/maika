@@ -173,7 +173,11 @@ def test_tree_has_config_get(migrated_db):
     group = client.tree.get_command("config")
     assert isinstance(group, app_commands.Group)
     assert group.description == CONFIG_GROUP_DESCRIPTION
-    assert [command.name for command in group.commands] == ["get"]
+    assert [command.name for command in group.commands] == [
+        "get",
+        "set",
+        "reset",
+    ]
 
     get = get_subcommand(client)
     assert get.description == CONFIG_GET_DESCRIPTION
