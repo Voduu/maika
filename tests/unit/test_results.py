@@ -34,8 +34,16 @@ def test_failure_kind_values():
         "not_found",
         "already_exists",
         "missing_argument",
+        "invalid",
         "other",
     ]
+
+
+def test_invalid_failure():
+    result = CommandResult.fail(FailureKind.INVALID, "Bad value.")
+    assert result.success is False
+    assert result.failure_kind is FailureKind.INVALID
+    assert result.message == "Bad value."
 
 
 @pytest.mark.parametrize("kind", list(FailureKind))

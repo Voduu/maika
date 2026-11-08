@@ -101,12 +101,12 @@ def test_global_setting_in_a_server_uses_global_row(migrated_db):
     assert first_line(result) == "`backups.days_kept = 14` (changed)"
 
 
-def test_none_value_without_range(migrated_db):
+def test_none_value_with_minimum_only(migrated_db):
     result = config_get(migrated_db, "log.channel.errors", 0)
     assert result.message == (
         "`log.channel.errors = none` (default)\n"
         "Channel for #errors. Empty falls back to #bot-log.\n"
-        "Type: int. Default: none."
+        "Type: int. Range: at least 1. Default: none."
     )
 
 

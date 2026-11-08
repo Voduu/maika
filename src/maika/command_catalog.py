@@ -5,9 +5,15 @@ collects them into the one CommandRegistry the bot uses.
 """
 
 from maika.commands import CommandRegistry
-from maika.config_commands import CONFIG_GET_COMMAND
+from maika.config_commands import (
+    CONFIG_GET_COMMAND,
+    CONFIG_RESET_COMMAND,
+    CONFIG_SET_COMMAND,
+)
 
 
 def build_command_registry() -> CommandRegistry:
     """Return the registry of every command."""
-    return CommandRegistry([CONFIG_GET_COMMAND])
+    return CommandRegistry(
+        [CONFIG_GET_COMMAND, CONFIG_SET_COMMAND, CONFIG_RESET_COMMAND]
+    )

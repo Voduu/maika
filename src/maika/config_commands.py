@@ -1,10 +1,15 @@
-"""The /config commands. This slice has /config get only.
+"""The /config commands: get, set and reset.
 
-See ``docs/design.md`` section 3.18 (Settings table). Every /config
-command is owner-only and fixed (section 1.2).
+See ``docs/design.md`` section 3.18 (Settings table, Change log).
+Every /config command is owner-only and fixed (section 1.2). Set and
+reset write global rows only for now, each with an audit entry, and
+announce the change through a callable (the bot posts it to
+``#bot-log``).
 """
 
+import logging
 import sqlite3
+from collections.abc import Callable
 
 from maika.commands import CommandCategory, CommandDefinition
 from maika.database import GLOBAL_GUILD_ID
@@ -13,14 +18,26 @@ from maika.permissions import Level, PermissionKey
 from maika.results import CommandResult, FailureKind
 from maika.settings import (
     SettingDefinition,
+    SettingsRegistry,
+    SettingValueError,
     UnknownSettingError,
     ValueType,
     describe_range,
     format_value,
 )
-from maika.settings_store import lookup_value
+from maika.settings_store import (
+    lookup_value,
+    reset_setting_value,
+    set_setting_value,
+)
+
+logger = logging.getLogger(__name__)
+
+type AnnounceFunction = Callable[[str], None]
 
 CONFIG_GET_NAME = "config get"
+CONFIG_SET_NAME = "config set"
+CONFIG_RESET_NAME = "config reset"
 
 CONFIG_GET_KEY = PermissionKey("config.get", Level.ADMIN, owner_only=True)
 
@@ -37,10 +54,53 @@ CONFIG_GET_COMMAND = CommandDefinition(
     example="/config get key:backups.days_kept",
 )
 
+CONFIG_SET_KEY = PermissionKey("config.set", Level.ADMIN, owner_only=True)
+
+CONFIG_SET_COMMAND = CommandDefinition(
+    name=CONFIG_SET_NAME,
+    description="Change a setting's value",
+    category=CommandCategory.OWNER,
+    key=CONFIG_SET_KEY,
+    help_text=(
+        "Changes a setting everywhere. The value is checked against the "
+        "setting's type and range, and the change is logged. "
+        "Example: /config set key:backups.days_kept value:14"
+    ),
+    example="/config set key:backups.days_kept value:14",
+)
+
+CONFIG_RESET_KEY = PermissionKey("config.reset", Level.ADMIN, owner_only=True)
+
+CONFIG_RESET_COMMAND = CommandDefinition(
+    name=CONFIG_RESET_NAME,
+    description="Put a setting back to its default",
+    category=CommandCategory.OWNER,
+    key=CONFIG_RESET_KEY,
+    help_text=(
+        "Removes a setting's override so its default applies again, "
+        "and logs the change. "
+        "Example: /config reset key:backups.days_kept"
+    ),
+    example="/config reset key:backups.days_kept",
+)
+
 # Every setting defined so far. Later features add their settings.
 SETTINGS = build_foundation_registry()
 
 UNKNOWN_SETTING_MESSAGE = "I don't know a setting called `{key}`."
+REJECTED_VALUE_MESSAGE = "`{key}` {rule}."
+SET_MESSAGE = "`{key}` is now `{new}` (was `{old}`)."
+SET_DEFAULT_NOTE = (
+    " This is the default value. `/config reset {key}` removes the "
+    "override, so later changes to the default apply."
+)
+ALREADY_SET_MESSAGE = "`{key}` is already `{value}`."
+RESET_MESSAGE = "`{key}` is back to its default, `{default}` (was `{old}`)."
+ALREADY_DEFAULT_MESSAGE = "`{key}` already uses its default."
+SET_ANNOUNCE_LINE = "Setting changed: `{key}` `{old}` to `{new}`."
+RESET_ANNOUNCE_LINE = (
+    "Setting reset: `{key}` `{old}` to its default `{default}`."
+)
 VALUE_LINE = "`{key} = {value}` ({source})"
 TYPE_PART = "Type: {value_type}."
 RANGE_PART = "Range: {range}."
@@ -144,3 +204,124 @@ def config_get(
     )
     lines = (value_line, definition.description, _details_line(definition))
     return CommandResult.ok(LINE_SEPARATOR.join(lines))
+
+
+def _unknown_setting(key: str) -> CommandResult:
+    """Return the NOT_FOUND failure for an unknown key."""
+    return CommandResult.fail(
+        FailureKind.NOT_FOUND, UNKNOWN_SETTING_MESSAGE.format(key=key)
+    )
+
+
+def _rejected_value(error: SettingValueError) -> CommandResult:
+    """Return the INVALID failure for a rejected value."""
+    message = REJECTED_VALUE_MESSAGE.format(key=error.key, rule=error.rule)
+    return CommandResult.fail(FailureKind.INVALID, message)
+
+
+def _announce(announce: AnnounceFunction, line: str) -> None:
+    """Call ``announce``, logging a failure instead of raising.
+
+    The change is already saved, so a failed announcement must not
+    turn the reply into a failure.
+    """
+    try:
+        announce(line)
+    except Exception:
+        logger.exception("Announcing a settings change failed.")
+
+
+def config_set(
+    connection: sqlite3.Connection,
+    registry: SettingsRegistry,
+    key: str,
+    value: str,
+    *,
+    actor_id: int,
+    now: int,
+    announce: AnnounceFunction,
+) -> CommandResult:
+    """Set a setting everywhere (``guild_id`` 0) and audit it.
+
+    The reply shows the new and old values with the /config get
+    display rules, plus a note when the new value is the default. A
+    value that stores the same as the current row writes nothing and
+    replies "already". An unknown key is NOT_FOUND, and a rejected
+    value is INVALID with the rule. When something changed,
+    ``announce`` receives the change line.
+    """
+    try:
+        definition = registry.get(key)
+        result = set_setting_value(
+            connection,
+            registry,
+            key=key,
+            text=value,
+            guild_id=GLOBAL_GUILD_ID,
+            actor_id=actor_id,
+            now=now,
+        )
+    except UnknownSettingError:
+        return _unknown_setting(key)
+    except SettingValueError as error:
+        return _rejected_value(error)
+
+    new = display_value(definition, result.new_value)
+    if not result.changed:
+        return CommandResult.ok(
+            ALREADY_SET_MESSAGE.format(key=key, value=new), data=result
+        )
+
+    old = display_value(definition, result.old_value)
+    message = SET_MESSAGE.format(key=key, new=new, old=old)
+    if result.is_default:
+        message += SET_DEFAULT_NOTE.format(key=key)
+    _announce(announce, SET_ANNOUNCE_LINE.format(key=key, old=old, new=new))
+    return CommandResult.ok(message, data=result)
+
+
+def config_reset(
+    connection: sqlite3.Connection,
+    registry: SettingsRegistry,
+    key: str,
+    *,
+    actor_id: int,
+    now: int,
+    announce: AnnounceFunction,
+) -> CommandResult:
+    """Remove a setting's global override so the default applies.
+
+    The reply shows the default and the old value. With no override
+    nothing is written and the reply says the default is already in
+    use. An unknown key is NOT_FOUND. When something changed,
+    ``announce`` receives the reset line.
+    """
+    try:
+        definition = registry.get(key)
+        result = reset_setting_value(
+            connection,
+            registry,
+            key=key,
+            guild_id=GLOBAL_GUILD_ID,
+            actor_id=actor_id,
+            now=now,
+        )
+    except UnknownSettingError:
+        return _unknown_setting(key)
+    except SettingValueError as error:
+        return _rejected_value(error)
+
+    if not result.changed:
+        return CommandResult.ok(
+            ALREADY_DEFAULT_MESSAGE.format(key=key), data=result
+        )
+
+    old = display_value(definition, result.old_value)
+    default = display_value(definition, result.new_value)
+    _announce(
+        announce,
+        RESET_ANNOUNCE_LINE.format(key=key, old=old, default=default),
+    )
+    return CommandResult.ok(
+        RESET_MESSAGE.format(key=key, default=default, old=old), data=result
+    )

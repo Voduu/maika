@@ -13,14 +13,15 @@ from typing import Any, Self
 class FailureKind(enum.Enum):
     """Why a command failed (design section 1.3).
 
-    The four named kinds have a pool of fixed lines (3.9); OTHER
-    shows the result's plain message.
+    The four named kinds have a pool of fixed lines (3.9). INVALID
+    (a value was rejected) and OTHER show the result's plain message.
     """
 
     DENIED = "denied"
     NOT_FOUND = "not_found"
     ALREADY_EXISTS = "already_exists"
     MISSING_ARGUMENT = "missing_argument"
+    INVALID = "invalid"
     OTHER = "other"
 
 

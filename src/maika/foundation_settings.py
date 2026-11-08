@@ -26,6 +26,7 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         server_scope=False,
         value_type=ValueType.INT,
         default=None,
+        minimum=1,
         description=(
             "Channel for #bot-log. Empty uses LOG_CHANNEL_ID from .env."
         ),
@@ -37,6 +38,7 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         server_scope=False,
         value_type=ValueType.INT,
         default=None,
+        minimum=1,
         description="Channel for #errors. Empty falls back to #bot-log.",
     ),
     SettingDefinition(
@@ -46,6 +48,7 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         server_scope=False,
         value_type=ValueType.INT,
         default=None,
+        minimum=1,
         description="Channel for #permissions. Empty falls back to #bot-log.",
     ),
     SettingDefinition(
@@ -55,6 +58,7 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         server_scope=False,
         value_type=ValueType.INT,
         default=None,
+        minimum=1,
         description="Channel for #feeds. Empty falls back to #bot-log.",
     ),
     SettingDefinition(
@@ -64,6 +68,7 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         server_scope=False,
         value_type=ValueType.INT,
         default=None,
+        minimum=1,
         description="Channel for #decisions. Empty falls back to #bot-log.",
     ),
     SettingDefinition(
@@ -73,6 +78,7 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         server_scope=False,
         value_type=ValueType.INT,
         default=None,
+        minimum=1,
         description="Channel for #persona-log. Empty falls back to #bot-log.",
     ),
     SettingDefinition(
@@ -82,6 +88,7 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         server_scope=False,
         value_type=ValueType.INT,
         default=None,
+        minimum=1,
         description="Channel for #events. Empty falls back to #bot-log.",
     ),
     SettingDefinition(
@@ -91,6 +98,7 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         server_scope=False,
         value_type=ValueType.INT,
         default=None,
+        minimum=1,
         description=(
             "Channel for #memory-review. Empty falls back to #bot-log."
         ),
