@@ -10,10 +10,12 @@ import pytest
 from maika.command_runner import CommandContext
 from maika.commands import CommandCategory, CommandDefinition, Visibility
 from maika.discord_adapter import (
+    REPLY_PART_LIMIT,
     context_from_interaction,
     handle_tree_error,
     is_ephemeral,
     send_result,
+    split_message,
 )
 from maika.permissions import Level, PermissionKey
 from maika.results import CommandResult, FailureKind
@@ -172,6 +174,116 @@ def test_http_error_is_logged_not_raised(caplog, done):
     (record,) = caplog.records
     assert record.getMessage() == "Sending the reply to cat failed."
     assert record.exc_info is not None
+
+
+# split_message and long replies
+
+
+def recording_interaction(done=False):
+    """An interaction whose sends are recorded in order."""
+    interaction = fake_interaction(done=done)
+    sent = []
+
+    async def respond(text, **kwargs):
+        sent.append(("response", text, kwargs))
+
+    async def follow(text, **kwargs):
+        sent.append(("followup", text, kwargs))
+
+    interaction.response.send_message = AsyncMock(side_effect=respond)
+    interaction.followup.send = AsyncMock(side_effect=follow)
+    return interaction, sent
+
+
+def test_split_short_message_is_one_part():
+    assert split_message("one\ntwo") == ["one\ntwo"]
+
+
+def test_split_message_exactly_at_limit_is_one_part():
+    text = "a" * (REPLY_PART_LIMIT - 4) + "\nbcd"
+    assert len(text) == REPLY_PART_LIMIT
+    assert split_message(text) == [text]
+
+
+def test_split_one_over_limit_breaks_at_line():
+    first = "a" * (REPLY_PART_LIMIT - 4)
+    text = first + "\nbcde"
+    assert len(text) == REPLY_PART_LIMIT + 1
+    assert split_message(text) == [first, "bcde"]
+
+
+def test_split_keeps_whole_lines_and_fills_parts():
+    line = "x" * 99
+    text = "\n".join([line] * 50)  # 50 * 100 - 1 = 4999 characters
+    parts = split_message(text)
+
+    assert [len(part) for part in parts] == [1999, 1999, 999]
+    assert "\n".join(parts) == text
+    for part in parts:
+        assert all(piece == line for piece in part.split("\n"))
+
+
+def test_split_overlong_line_is_cut_with_ellipsis():
+    text = "short\n" + "y" * (REPLY_PART_LIMIT + 500) + "\nend"
+    parts = split_message(text)
+
+    assert parts[0] == "short"
+    assert len(parts[1]) == REPLY_PART_LIMIT
+    assert parts[1].endswith("…")
+    assert parts[2] == "end"
+
+
+def test_send_short_result_is_one_message():
+    interaction, sent = recording_interaction()
+
+    asyncio.run(send_result(interaction, PUBLIC_COMMAND, OK))
+
+    assert [(where, text) for where, text, _ in sent] == [
+        ("response", "Here is Buttons.")
+    ]
+
+
+def test_send_long_result_in_order_with_same_flag():
+    line = "z" * 99
+    lines = [f"{number:02d}{line[2:]}" for number in range(50)]
+    result = CommandResult.ok("\n".join(lines))
+    interaction, sent = recording_interaction()
+
+    asyncio.run(send_result(interaction, EPHEMERAL_COMMAND, result))
+
+    assert [where for where, _, _ in sent] == [
+        "response",
+        "followup",
+        "followup",
+    ]
+    assert "\n".join(text for _, text, _ in sent) == result.message
+    for _, text, kwargs in sent:
+        assert len(text) <= REPLY_PART_LIMIT
+        assert kwargs["ephemeral"] is True
+        assert_no_mentions(SimpleNamespace(kwargs=kwargs))
+
+
+def test_send_long_result_after_reply_uses_followups_only():
+    result = CommandResult.ok("\n".join(["w" * 99] * 30))
+    interaction, sent = recording_interaction(done=True)
+
+    asyncio.run(send_result(interaction, PUBLIC_COMMAND, result))
+
+    assert [where for where, _, _ in sent] == ["followup", "followup"]
+    assert all(kwargs["ephemeral"] is False for _, _, kwargs in sent)
+
+
+def test_send_stops_after_a_failed_part(caplog):
+    result = CommandResult.ok("\n".join(["v" * 99] * 50))
+    interaction, sent = recording_interaction()
+    interaction.followup.send = AsyncMock(side_effect=http_error())
+
+    with caplog.at_level(logging.ERROR, logger=ADAPTER_LOGGER):
+        asyncio.run(send_result(interaction, PUBLIC_COMMAND, result))
+
+    assert [where for where, _, _ in sent] == ["response"]
+    interaction.followup.send.assert_awaited_once()
+    assert caplog.messages == ["Sending the reply to cat failed."]
 
 
 # handle_tree_error

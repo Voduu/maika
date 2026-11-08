@@ -7,7 +7,9 @@ result as a flat reply. Reply visibility follows design section 1.5:
 a refusal is always ephemeral, and every other result keeps the
 visibility of its command.
 
-No reply ever pings anyone: mentions are turned off on every send.
+No reply ever pings anyone: mentions are turned off on every send. A
+reply longer than Discord's message limit is sent as several messages,
+split at line boundaries.
 """
 
 import logging
@@ -24,9 +26,15 @@ from maika.command_runner import (
 )
 from maika.commands import CommandDefinition, CommandRegistry, Visibility
 from maika.database import GLOBAL_GUILD_ID
+from maika.log_router import DISCORD_MESSAGE_LIMIT, truncate_line
 from maika.results import CommandResult, FailureKind
 
 logger = logging.getLogger(__name__)
+
+# The most characters one reply message may hold.
+REPLY_PART_LIMIT = DISCORD_MESSAGE_LIMIT
+
+LINE_BREAK = "\n"
 
 
 def guild_id_from_interaction(interaction: discord.Interaction) -> int:
@@ -68,6 +76,33 @@ def is_ephemeral(definition: CommandDefinition, result: CommandResult) -> bool:
     return definition.visibility is Visibility.EPHEMERAL
 
 
+def split_message(text: str) -> list[str]:
+    """Split a reply into parts that each fit one Discord message.
+
+    Text within ``REPLY_PART_LIMIT`` is one part. Longer text is split
+    at line breaks, keeping as many whole lines in each part as fit.
+    A single line longer than the limit is cut and ends with an
+    ellipsis (``log_router.truncate_line``).
+    """
+    if len(text) <= REPLY_PART_LIMIT:
+        return [text]
+
+    parts: list[str] = []
+    current: str | None = None
+    for line in text.split(LINE_BREAK):
+        line = truncate_line(line)
+        if current is None:
+            current = line
+        elif len(current) + len(LINE_BREAK) + len(line) <= REPLY_PART_LIMIT:
+            current += LINE_BREAK + line
+        else:
+            parts.append(current)
+            current = line
+    if current is not None:
+        parts.append(current)
+    return parts
+
+
 async def send_result(
     interaction: discord.Interaction,
     definition: CommandDefinition,
@@ -75,22 +110,31 @@ async def send_result(
 ) -> None:
     """Send a result's message as the reply to an interaction.
 
-    The first reply uses the interaction response; once that is done,
-    the reply goes through the followup webhook. A failed send is
-    logged and not raised.
+    The first part uses the interaction response; once that is done
+    (or for every later part of a long message), it goes through the
+    followup webhook. Every part has the same ephemeral flag and no
+    mentions. A failed send is logged and not raised, and the parts
+    after it are not sent.
     """
     ephemeral = is_ephemeral(definition, result)
     allowed_mentions = discord.AllowedMentions.none()
+    first, *rest = split_message(result.message)
     try:
         if interaction.response.is_done():
             await interaction.followup.send(
-                result.message,
+                first,
                 ephemeral=ephemeral,
                 allowed_mentions=allowed_mentions,
             )
         else:
             await interaction.response.send_message(
-                result.message,
+                first,
+                ephemeral=ephemeral,
+                allowed_mentions=allowed_mentions,
+            )
+        for part in rest:
+            await interaction.followup.send(
+                part,
                 ephemeral=ephemeral,
                 allowed_mentions=allowed_mentions,
             )

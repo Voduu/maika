@@ -177,6 +177,7 @@ def test_tree_has_config_get(migrated_db):
         "get",
         "set",
         "reset",
+        "list",
     ]
 
     get = get_subcommand(client)

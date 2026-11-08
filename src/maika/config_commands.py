@@ -1,4 +1,4 @@
-"""The /config commands: get, set and reset.
+"""The /config commands: get, set, reset and list.
 
 See ``docs/design.md`` section 3.18 (Settings table, Change log).
 Every /config command is owner-only and fixed (section 1.2). Set and
@@ -18,6 +18,7 @@ from maika.permissions import Level, PermissionKey
 from maika.results import CommandResult, FailureKind
 from maika.settings import (
     SettingDefinition,
+    SettingLevel,
     SettingsRegistry,
     SettingValueError,
     UnknownSettingError,
@@ -38,6 +39,7 @@ type AnnounceFunction = Callable[[str], None]
 CONFIG_GET_NAME = "config get"
 CONFIG_SET_NAME = "config set"
 CONFIG_RESET_NAME = "config reset"
+CONFIG_LIST_NAME = "config list"
 
 CONFIG_GET_KEY = PermissionKey("config.get", Level.ADMIN, owner_only=True)
 
@@ -84,6 +86,22 @@ CONFIG_RESET_COMMAND = CommandDefinition(
     example="/config reset key:backups.days_kept",
 )
 
+CONFIG_LIST_KEY = PermissionKey("config.list", Level.ADMIN, owner_only=True)
+
+CONFIG_LIST_COMMAND = CommandDefinition(
+    name=CONFIG_LIST_NAME,
+    description="List settings by category",
+    category=CommandCategory.OWNER,
+    key=CONFIG_LIST_KEY,
+    help_text=(
+        "Without a category, lists the categories and how many settings "
+        "each has. With a category, lists its settings and their values. "
+        "Basic settings only, unless all is true. "
+        "Example: /config list category:logging all:true"
+    ),
+    example="/config list category:logging all:true",
+)
+
 # Every setting defined so far. Later features add their settings.
 SETTINGS = build_foundation_registry()
 
@@ -100,6 +118,18 @@ ALREADY_DEFAULT_MESSAGE = "`{key}` already uses its default."
 SET_ANNOUNCE_LINE = "Setting changed: `{key}` `{old}` to `{new}`."
 RESET_ANNOUNCE_LINE = (
     "Setting reset: `{key}` `{old}` to its default `{default}`."
+)
+CATEGORY_LINE = "{name} ({count})"
+CATEGORY_HINT_LINE = "Use `/config list category:<name>`."
+LIST_VALUE_LINE = "`{key} = {value}`"
+LIST_CHANGED_SUFFIX = " (changed)"
+UNKNOWN_CATEGORY_MESSAGE = (
+    "I don't know a settings category called `{name}`. "
+    "Categories: {categories}."
+)
+NO_BASIC_SETTINGS_MESSAGE = (
+    "No Basic settings in `{name}`. Add `all:true` to include Advanced "
+    "settings."
 )
 VALUE_LINE = "`{key} = {value}` ({source})"
 TYPE_PART = "Type: {value_type}."
@@ -204,6 +234,103 @@ def config_get(
     )
     lines = (value_line, definition.description, _details_line(definition))
     return CommandResult.ok(LINE_SEPARATOR.join(lines))
+
+
+def setting_categories(registry: SettingsRegistry) -> tuple[str, ...]:
+    """Return the category names, in the order they first appear."""
+    categories: list[str] = []
+    for key in registry.keys():
+        category = registry.get(key).category
+        if category not in categories:
+            categories.append(category)
+    return tuple(categories)
+
+
+def _listed_definitions(
+    registry: SettingsRegistry, category: str, show_all: bool
+) -> tuple[SettingDefinition, ...]:
+    """Return a category's settings, Basic only unless ``show_all``."""
+    definitions = registry.definitions_in_category(category)
+    if show_all:
+        return definitions
+    return tuple(
+        definition
+        for definition in definitions
+        if definition.level is SettingLevel.BASIC
+    )
+
+
+def _category_overview(
+    registry: SettingsRegistry, show_all: bool
+) -> CommandResult:
+    """Return one line per category with its count, then a hint."""
+    lines = [
+        CATEGORY_LINE.format(
+            name=category,
+            count=len(_listed_definitions(registry, category, show_all)),
+        )
+        for category in setting_categories(registry)
+    ]
+    lines.append(CATEGORY_HINT_LINE)
+    return CommandResult.ok(LINE_SEPARATOR.join(lines))
+
+
+def _category_listing(
+    connection: sqlite3.Connection,
+    registry: SettingsRegistry,
+    category: str,
+    show_all: bool,
+) -> CommandResult:
+    """Return one "`key = value`" line per listed setting."""
+    definitions = _listed_definitions(registry, category, show_all)
+    if not definitions:
+        return CommandResult.ok(
+            NO_BASIC_SETTINGS_MESSAGE.format(name=category)
+        )
+    lines = []
+    for definition in definitions:
+        lookup = lookup_value(
+            connection, registry, definition.key, GLOBAL_GUILD_ID
+        )
+        line = LIST_VALUE_LINE.format(
+            key=definition.key,
+            value=display_value(definition, lookup.value),
+        )
+        if lookup.stored:
+            line += LIST_CHANGED_SUFFIX
+        lines.append(line)
+    return CommandResult.ok(LINE_SEPARATOR.join(lines))
+
+
+def config_list(
+    connection: sqlite3.Connection,
+    registry: SettingsRegistry,
+    category: str | None,
+    show_all: bool,
+) -> CommandResult:
+    """List the setting categories, or the settings in one category.
+
+    With no category, each category is listed with the number of
+    settings that would be shown. With a category (matched without
+    regard to case), each setting is shown as "`key = value`" with
+    the /config get display rules, plus " (changed)" when a stored
+    global row applies. Only Basic settings are counted and listed
+    unless ``show_all`` is true. An unknown category is NOT_FOUND.
+    """
+    categories = setting_categories(registry)
+    if category is None or category.strip() == "":
+        return _category_overview(registry, show_all)
+
+    name = category.strip().lower()
+    if name not in categories:
+        return CommandResult.fail(
+            FailureKind.NOT_FOUND,
+            UNKNOWN_CATEGORY_MESSAGE.format(
+                name=category.strip(),
+                categories=LIST_SEPARATOR.join(categories),
+            ),
+        )
+    return _category_listing(connection, registry, name, show_all)
 
 
 def _unknown_setting(key: str) -> CommandResult:
