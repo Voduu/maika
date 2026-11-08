@@ -543,7 +543,13 @@ def test_perm_group_in_tree(migrated_db):
 
     assert isinstance(group, app_commands.Group)
     assert 1 <= len(group.description) < 100
-    assert [command.name for command in group.commands] == ["level", "show"]
+    assert [command.name for command in group.commands] == [
+        "level",
+        "show",
+        "grant",
+        "deny",
+        "reset",
+    ]
     level_command = subcommand(client, "level")
     user, level = level_command.parameters
     assert user.name == "user"

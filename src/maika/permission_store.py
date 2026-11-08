@@ -78,6 +78,12 @@ SELECT_USER_OVERRIDES_SQL = (
     "WHERE user_id = :user_id AND guild_id = :guild_id"
 )
 
+SELECT_KEY_OVERRIDES_SQL = (
+    "SELECT guild_id, effect FROM permission_overrides "
+    "WHERE user_id = :user_id AND key = :key "
+    "ORDER BY guild_id"
+)
+
 UPSERT_OVERRIDE_SQL = (
     "INSERT INTO permission_overrides "
     "(user_id, key, effect, guild_id, set_by, set_at) "
@@ -444,6 +450,34 @@ def find_covered_overrides(
         if _is_covered(shape, pattern, row["key"])
     ]
     return tuple(sorted(covered, key=lambda cleared: cleared.key))
+
+
+@dataclass(frozen=True)
+class ScopedOverride:
+    """One stored override row for a key, in one scope.
+
+    ``guild_id`` is 0 for the global row or a server ID.
+    """
+
+    guild_id: int
+    effect: str
+
+
+def find_key_overrides(
+    connection: sqlite3.Connection, *, user_id: int, key: str
+) -> tuple[ScopedOverride, ...]:
+    """Return a person's rows for one key or pattern, in every scope.
+
+    ``key`` is matched exactly, so ``feed.*`` finds only ``feed.*``
+    rows. The global row (``guild_id`` 0) comes first, then servers
+    by ID. Nothing is written.
+    """
+    rows = connection.execute(
+        SELECT_KEY_OVERRIDES_SQL, {"user_id": user_id, "key": key}
+    ).fetchall()
+    return tuple(
+        ScopedOverride(row["guild_id"], row["effect"]) for row in rows
+    )
 
 
 def _write_override_audit(

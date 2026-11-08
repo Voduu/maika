@@ -6,7 +6,9 @@ from maika.permission_store import (
     ClearedOverride,
     OverrideChange,
     PermissionChangeError,
+    ScopedOverride,
     find_covered_overrides,
+    find_key_overrides,
     reset_override,
     set_override,
 )
@@ -764,3 +766,41 @@ def test_reset_override_audit_failure_leaves_rows(migrated_db, pattern):
 
     assert not migrated_db.in_transaction
     assert snapshot(migrated_db) == before
+
+
+# find_key_overrides
+
+
+def test_find_key_overrides_every_scope_global_first(migrated_db):
+    deny(migrated_db, "feed.*", guild_id=OTHER_GUILD)
+    grant(migrated_db, "feed.*", guild_id=GUILD)
+    deny(migrated_db, "feed.*")
+
+    rows = find_key_overrides(migrated_db, user_id=ALEX, key="feed.*")
+
+    assert rows == (
+        ScopedOverride(0, DENY),
+        ScopedOverride(GUILD, ALLOW),
+        ScopedOverride(OTHER_GUILD, DENY),
+    )
+
+
+def test_find_key_overrides_matches_key_and_person_exactly(migrated_db):
+    grant(migrated_db, "feed.remove")
+    grant(migrated_db, "*")
+    deny(migrated_db, "feed.*", user_id=SAM)
+
+    assert find_key_overrides(migrated_db, user_id=ALEX, key="feed.*") == ()
+    assert find_key_overrides(migrated_db, user_id=SAM, key="feed.*") == (
+        ScopedOverride(0, DENY),
+    )
+
+
+def test_find_key_overrides_writes_nothing(migrated_db):
+    grant(migrated_db, "cat.view")
+    before = snapshot(migrated_db)
+
+    find_key_overrides(migrated_db, user_id=ALEX, key="cat.view")
+
+    assert snapshot(migrated_db) == before
+    assert not migrated_db.in_transaction
