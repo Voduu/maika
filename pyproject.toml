@@ -55,3 +55,9 @@ convention = "pep257"
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra --strict-markers --strict-config"
+# discord.utils.escape_markdown passes count to re.sub positionally,
+# which Python 3.14 deprecates. Only that warning from that module is
+# ignored, so every other warning still shows (design section 8).
+filterwarnings = [
+    "ignore:'count' is passed as positional argument:DeprecationWarning:discord.utils",
+]

@@ -187,6 +187,10 @@ class PermissionRegistry:
         """Return True when at least one key is in ``area``."""
         return any(_key_area(key) == area for key in self._keys)
 
+    def keys(self) -> tuple[str, ...]:
+        """Return every key, sorted."""
+        return tuple(sorted(self._keys))
+
 
 class DecisionSource(enum.Enum):
     """Which step of the check decided."""
