@@ -117,7 +117,7 @@ In Layer 2 the render step reads the canned dictionary only. Layer 3 changes tha
 
 **Rules for testability.**
 - Decision functions are pure: addressing score, disposition, trigger matching, and gating take plain data in and return a decision. The Discord layer gathers inputs and carries out outputs, so replay scripts run without Discord.
-- Command functions return a result object (success, data, a plain default message, and for a failure a kind: `denied`, `not_found`, `already_exists`, `missing_argument`, `invalid` (a rejected value), or `other`) and never final text. The command lane renders it flat: a success shows the plain message, and a failure of one of the four named kinds shows a fixed line from the matching pool in the data file (3.9), with the plain default message as the fallback. The `invalid` and `other` kinds show their plain message. The social commands (3.9) are the exception for successes: their success line comes from a mood- and tier-keyed pool. The conversational lane passes the result to the personality renderer for an in-character reaction.
+- Command functions return a result object (success, data, a plain default message, and for a failure a kind: `denied`, `not_found`, `already_exists`, `missing_argument`, `invalid` (a rejected value), or `other`) and never final text. The command lane renders it flat: a success shows the plain message, and a failure of one of the four named kinds shows a fixed line from the matching pool in the data file (3.9), with the plain default message as the fallback. The `invalid` and `other` kinds show their plain message. The social commands (3.9) are the exception for successes: their success line comes from a mood- and tier-keyed pool. The conversational lane passes the result to the personality renderer for an in-character reaction. A result can also carry a confirmation (a prompt and the action to run on Confirm). The command lane shows it as an ephemeral message with Confirm and Cancel buttons and runs the action through the same wrapper, so the permission is checked again and the action is logged.
 - All database access goes through one module; tests can use an in-memory database. Schema changes use numbered migration scripts from the start.
 
 ### 1.4 Reply style
@@ -1116,6 +1116,7 @@ Ideas not yet scheduled:
 - `discord.utils.escape_markdown` triggers a DeprecationWarning on Python 3.14 (it passes `count` to `re.sub` positionally). Recheck after the next discord.py upgrade. pytest ignores this one warning (pyproject.toml) so other warnings stay visible.
 - Cross-checks between settings (10.16): `/config set` refuses a change that breaks one. Build the mechanism with the first pair of settings that needs it.
 - `/config set` and `/config reset` write global rows only. Add a scope option (this server or everywhere) with the first server-scoped setting.
+- Permission commands cannot set a server-scoped row for a server the owner is not in. Add an optional `server` ID option on `/perm grant`, `/perm deny`, `/perm reset`, `/block` and `/unblock` if the case comes up.
 
 ---
 
@@ -2097,7 +2098,7 @@ Conversational commands (3.17).
 | `commands.act_without_asking` | bool | true | - | G | Basic | Off: every conversational command asks first. |
 | `commands.ask_cutoff` | float | TBD | 0 to 1 | G | Advanced | Below this score: ignore. Between the cutoffs: ask. |
 | `commands.act_cutoff` | float | TBD | 0 to 1 | G | Advanced | At or above this score with a valid fit: act directly. |
-| `commands.confirm_timeout_seconds` | int | TBD | 10 to 600 | G | Advanced | Seconds before confirmation buttons stop working. |
+| `commands.confirm_timeout_seconds` | int | 60 | 10 to 600 | G | Advanced | Seconds before confirmation buttons stop working. |
 | `nickname.max_count` | int | 3 | 1 to 10 | G | Basic | Nicknames allowed per person. |
 | `nickname.max_chars` | int | 40 | 1 to 80 | G | Basic | Longest nickname in characters. |
 | `nickname.max_words` | int | 5 | 1 to 10 | G | Basic | Longest nickname in words. |
