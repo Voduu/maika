@@ -315,3 +315,41 @@ def test_visibility_must_be_enum():
             example="/cat name:buttons",
             visibility="public",
         )
+
+
+# key_description
+
+
+def test_key_description_prefers_the_key_description():
+    key = PermissionKey(
+        "memory.view", Level.EVERYONE, protected=True, description="Own"
+    )
+    registry = CommandRegistry([define()], extra_keys=[key])
+
+    assert registry.key_description("memory.view") == "Own"
+
+
+def test_key_description_falls_back_to_commands():
+    registry = CommandRegistry(
+        [
+            define(name="cat", description="Show a cat photo."),
+            define(name="addcat", description="Add a cat photo."),
+            define(name="retag", key=CAT_RETAG, description="Retag."),
+        ]
+    )
+
+    # Sorted by command name: addcat before cat.
+    assert registry.key_description("cat.view") == (
+        "Add a cat photo.; Show a cat photo."
+    )
+    assert registry.key_description("cat.retag") == "Retag."
+
+
+def test_key_description_empty_for_bare_extra_key():
+    registry = CommandRegistry([], extra_keys=[CHAT_TALK])
+    assert registry.key_description("chat.talk") == ""
+
+
+def test_key_description_unknown_key():
+    with pytest.raises(UnknownPermissionKeyError):
+        CommandRegistry([]).key_description("cat.view")

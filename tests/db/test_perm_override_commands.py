@@ -758,12 +758,12 @@ def test_show_reflects_a_new_override(migrated_db):
 
     lines = show()
     assert (
-        f"`feed.remove`: allowed (override: allow override on feed.\\*, "
-        f"server {GUILD})"
+        "`feed.remove`: allowed (override: allow override on feed.\\*, "
+        "this server)"
     ) in lines
     assert (
-        f"`feed.subscribe`: allowed (override: allow override on feed.\\*, "
-        f"server {GUILD})"
+        "`feed.subscribe`: allowed (override: allow override on feed.\\*, "
+        "this server)"
     ) in lines
 
 
@@ -831,9 +831,15 @@ def test_patterns_leave_out_keys_without_exceptions():
     assert offered == list(patterns)
 
 
-def test_real_registry_offers_only_star():
+def test_real_registry_offers_star_and_memory_keys():
     registry = build_command_registry().permission_registry()
-    assert permission_patterns(registry) == ("*",)
+    # The protected memory.view and memory.forget are left out.
+    assert permission_patterns(registry) == (
+        "*",
+        "memory.*",
+        "memory.add",
+        "memory.manage",
+    )
 
 
 def test_pattern_choices_match_typed_text():

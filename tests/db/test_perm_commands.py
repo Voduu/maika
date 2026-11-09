@@ -265,12 +265,13 @@ def expected_lines(connection, target_id, guild_id=GUILD):
             user_id=target_id,
             key=key,
             guild_id=guild_id,
+            server_label="this server",
         )
         source = decision.source.value
         detail = discord.utils.escape_markdown(decision.detail)
         if not decision.allowed:
             lines.append(f"`{key}`: denied ({source}: {detail})")
-        elif decision.detail == source:
+        elif source in ("owner", "protected"):
             lines.append(f"`{key}`: allowed ({source})")
         else:
             lines.append(f"`{key}`: allowed ({source}: {detail})")
@@ -316,7 +317,7 @@ def test_show_level_zero(migrated_db):
         "needs level 2)",
         "`feed.subscribe`: denied (level: level 0 (everyone), "
         "feed.subscribe needs level 1)",
-        "`memory.view`: allowed (protected: memory.view is protected)",
+        "`memory.view`: allowed (protected)",
     ]
     assert lines[1:] == expected_lines(migrated_db, SAM)
 
@@ -388,15 +389,15 @@ def test_show_override_and_block(migrated_db):
     lines = show(migrated_db, ALEX)
 
     assert lines[1:] == [
-        f"`cat.view`: allowed (override: allow override on cat.view, "
-        f"server {GUILD})",
-        f"`chat.talk`: denied (block: chat block, server {GUILD})",
+        "`cat.view`: allowed (override: allow override on cat.view, "
+        "this server)",
+        "`chat.talk`: denied (block: chat block, this server)",
         "`config.get`: denied (owner_only_key: config.get is owner-only)",
         "`feed.remove`: denied (override: deny override on feed.\\*, "
         "everywhere)",
         "`feed.subscribe`: denied (override: deny override on feed.\\*, "
         "everywhere)",
-        "`memory.view`: allowed (protected: memory.view is protected)",
+        "`memory.view`: allowed (protected)",
     ]
     assert lines[1:] == expected_lines(migrated_db, ALEX)
 
@@ -549,6 +550,8 @@ def test_perm_group_in_tree(migrated_db):
         "grant",
         "deny",
         "reset",
+        "history",
+        "keys",
     ]
     level_command = subcommand(client, "level")
     user, level = level_command.parameters

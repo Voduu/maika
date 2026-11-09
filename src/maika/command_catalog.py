@@ -1,7 +1,8 @@
-"""The list of every command the bot registers.
+"""The list of every command and permission key the bot registers.
 
 Each command module defines its CommandDefinition; this module
-collects them into the one CommandRegistry the bot uses.
+collects them, plus the keys that have no command yet, into the one
+CommandRegistry the bot uses.
 """
 
 from maika.block_commands import BLOCK_COMMAND, UNBLOCK_COMMAND
@@ -19,10 +20,42 @@ from maika.perm_commands import (
     PERM_RESET_COMMAND,
     PERM_SHOW_COMMAND,
 )
+from maika.perm_lookup_commands import PERM_HISTORY_COMMAND, PERM_KEYS_COMMAND
+from maika.permissions import Level, PermissionKey
+
+# The memory keys (design sections 1.2 and 2.5). The commands come at
+# build step 13; the keys are registered now so overrides and
+# /perm keys list them early.
+MEMORY_KEYS = (
+    PermissionKey(
+        "memory.view",
+        Level.EVERYONE,
+        protected=True,
+        description="View your own memories (/memories)",
+    ),
+    PermissionKey(
+        "memory.add",
+        Level.MEMBER,
+        description=(
+            "Save a memory about yourself or another person (/remember)"
+        ),
+    ),
+    PermissionKey(
+        "memory.forget",
+        Level.EVERYONE,
+        protected=True,
+        description="Delete your own memories (/forget, /forget all)",
+    ),
+    PermissionKey(
+        "memory.manage",
+        Level.ADMIN,
+        description="View and delete other people's memories",
+    ),
+)
 
 
 def build_command_registry() -> CommandRegistry:
-    """Return the registry of every command."""
+    """Return the registry of every command and command-less key."""
     return CommandRegistry(
         [
             CONFIG_GET_COMMAND,
@@ -34,7 +67,10 @@ def build_command_registry() -> CommandRegistry:
             PERM_GRANT_COMMAND,
             PERM_DENY_COMMAND,
             PERM_RESET_COMMAND,
+            PERM_HISTORY_COMMAND,
+            PERM_KEYS_COMMAND,
             BLOCK_COMMAND,
             UNBLOCK_COMMAND,
-        ]
+        ],
+        extra_keys=MEMORY_KEYS,
     )

@@ -56,6 +56,15 @@ from maika.perm_commands import (
     perm_reset,
     perm_show,
 )
+from maika.perm_lookup_commands import (
+    HISTORY_DEFAULT_COUNT,
+    HISTORY_MAX_COUNT,
+    HISTORY_MIN_COUNT,
+    PERM_HISTORY_NAME,
+    PERM_KEYS_NAME,
+    perm_history,
+    perm_keys,
+)
 from maika.permissions import (
     BLOCK_KIND_ALL,
     BLOCK_KIND_CHAT,
@@ -111,6 +120,12 @@ PERM_RESET_SUBCOMMAND = "reset"
 PERM_RESET_DESCRIPTION = "Remove a person's exception for a key"
 PERM_KEY_DESCRIPTION = "A permission key, area.* or *"
 PERM_SCOPE_DESCRIPTION = "Where it applies (default: Everywhere)"
+PERM_HISTORY_SUBCOMMAND = "history"
+PERM_HISTORY_DESCRIPTION = "List the permission changes made to one person"
+PERM_COUNT_DESCRIPTION = "How many changes to show (default 20, up to 100)"
+PERM_KEYS_SUBCOMMAND = "keys"
+PERM_KEYS_DESCRIPTION = "List the permission keys and who may use them"
+PERM_AREA_DESCRIPTION = "Only the keys in one area, for example memory"
 
 BLOCK_DESCRIPTION = "Block a person from chat, or from chat and commands"
 BLOCK_KIND_DESCRIPTION = "What to block"
@@ -236,6 +251,47 @@ def permission_pattern_choices(
         app_commands.Choice(name=pattern, value=pattern)
         for pattern in patterns[:AUTOCOMPLETE_CHOICE_LIMIT]
     ]
+
+
+def permission_areas(registry: PermissionRegistry) -> tuple[str, ...]:
+    """Return every area that has at least one key, sorted."""
+    areas = {
+        key.split(KEY_SEPARATOR, maxsplit=1)[0] for key in registry.keys()
+    }
+    return tuple(sorted(areas))
+
+
+def permission_area_choices(
+    registry: PermissionRegistry, current: str
+) -> Choices:
+    """Return the areas that contain the typed text.
+
+    The match ignores case, and at most ``AUTOCOMPLETE_CHOICE_LIMIT``
+    areas are returned, sorted. The name and value of each choice are
+    the area.
+    """
+    text = current.strip().lower()
+    areas = [area for area in permission_areas(registry) if text in area]
+    return [
+        app_commands.Choice(name=area, value=area)
+        for area in areas[:AUTOCOMPLETE_CHOICE_LIMIT]
+    ]
+
+
+def owner_area_autocomplete(
+    owner_id: int, registry: PermissionRegistry
+) -> AutocompleteFunction:
+    """Return an area autocomplete that answers the owner only."""
+
+    async def autocomplete(
+        interaction: discord.Interaction, current: str
+    ) -> Choices:
+        """Return the area choices for the owner, or none."""
+        if interaction.user.id != owner_id:
+            return []
+        return permission_area_choices(registry, current)
+
+    return autocomplete
 
 
 def owner_permission_autocomplete(
@@ -604,6 +660,57 @@ def build_perm_group(
             user=user,
             key=key,
             scope=scope,
+        )
+
+    @group.command(
+        name=PERM_HISTORY_SUBCOMMAND, description=PERM_HISTORY_DESCRIPTION
+    )
+    @app_commands.describe(
+        user=PERM_USER_DESCRIPTION, count=PERM_COUNT_DESCRIPTION
+    )
+    async def perm_history_command(
+        interaction: discord.Interaction,
+        user: discord.User,
+        count: app_commands.Range[
+            int, HISTORY_MIN_COUNT, HISTORY_MAX_COUNT
+        ] = HISTORY_DEFAULT_COUNT,
+    ) -> None:
+        """Run /perm history."""
+        guild_id = guild_id_from_interaction(interaction)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=PERM_HISTORY_NAME,
+            function=lambda: perm_history(
+                connection,
+                target_id=user.id,
+                count=count,
+                guild_id=guild_id,
+            ),
+            log_usage=log_usage,
+        )
+
+    @group.command(
+        name=PERM_KEYS_SUBCOMMAND, description=PERM_KEYS_DESCRIPTION
+    )
+    @app_commands.describe(area=PERM_AREA_DESCRIPTION)
+    @app_commands.autocomplete(
+        area=owner_area_autocomplete(owner_id, permission_registry)
+    )
+    async def perm_keys_command(
+        interaction: discord.Interaction, area: str | None = None
+    ) -> None:
+        """Run /perm keys."""
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=PERM_KEYS_NAME,
+            function=lambda: perm_keys(registry, area=area),
+            log_usage=log_usage,
         )
 
     return group

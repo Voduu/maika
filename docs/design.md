@@ -1249,7 +1249,7 @@ CREATE INDEX audit_log_target ON audit_log (target_id, logged_at);
 
 - `kind` is `level`, `override`, `block`, `setting`, `photo` (a removed photo, 2.4), `memory` (a deleted memory, without its text, 9.16), `relationship` (an owner change, 3.4), or `nickname` (a change to someone else's list, 3.6), or `say` (a message posted with `/say`, 3.18). More kinds will follow (event resets). The column has no `CHECK` rule because SQLite cannot change one without rebuilding the table, so the code validates kinds from a constant list.
 - A NULL `old_value` or `new_value` means "no row".
-- A wildcard command writes one row for the wildcard and one row for each exact row it clears (note: "cleared by `/perm deny *`"). `/perm history @x` lists everything that happened to one person.
+- A wildcard command writes one row for the wildcard and one row for each exact row it clears (note: "cleared by `/perm deny *`"). `/perm history @x` lists everything that happened to one person. It shows the newest entries first (20 by default, up to 100), with times as Discord timestamps.
 - The change and its audit row are written in one transaction.
 - Retention: keep everything.
 - Level, override, and block entries are copied to `#permissions`, settings entries to `#bot-log` (3.18).
