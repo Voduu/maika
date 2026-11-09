@@ -592,3 +592,62 @@ def test_check_writes_nothing(migrated_db):
 
     assert migrated_db.total_changes == before
     assert not migrated_db.in_transaction
+
+
+# server_label
+
+
+def check_labelled(connection, key, label, guild_id=GUILD):
+    return check_permission(
+        connection,
+        REGISTRY,
+        owner_id=OWNER,
+        user_id=ALEX,
+        key=key,
+        guild_id=guild_id,
+        server_label=label,
+    )
+
+
+def test_label_names_a_server_override(migrated_db):
+    add_override(migrated_db, "feed.list", "deny", guild_id=GUILD)
+
+    labelled = check_labelled(migrated_db, "feed.list", "this server")
+    unlabelled = check(migrated_db, "feed.list")
+
+    assert labelled.detail == "deny override on feed.list, this server"
+    assert unlabelled.detail == f"deny override on feed.list, server {GUILD}"
+    assert labelled.allowed is unlabelled.allowed is False
+    assert labelled.source is unlabelled.source is DecisionSource.OVERRIDE
+
+
+def test_label_names_a_server_block(migrated_db):
+    add_block(migrated_db, "all", guild_id=GUILD)
+
+    labelled = check_labelled(migrated_db, "feed.list", "this server")
+    unlabelled = check(migrated_db, "feed.list")
+
+    assert labelled.detail == "all block, this server"
+    assert unlabelled.detail == f"all block, server {GUILD}"
+    assert labelled.allowed is unlabelled.allowed is False
+    assert labelled.source is unlabelled.source is DecisionSource.BLOCK
+
+
+def test_label_leaves_global_rows_as_everywhere(migrated_db):
+    add_block(migrated_db, "chat")
+    add_override(migrated_db, "feed.list", "deny")
+
+    talk = check_labelled(migrated_db, "chat.talk", "this server")
+    feed = check_labelled(migrated_db, "feed.list", "this server")
+
+    assert talk.detail == "chat block, everywhere"
+    assert feed.detail == "deny override on feed.list, everywhere"
+
+
+def test_label_does_not_change_other_details(migrated_db):
+    set_level(migrated_db, ALEX, Level.TRUSTED)
+
+    for key in ("cat.retag", "perm.level", "memory.view"):
+        assert check_labelled(migrated_db, key, "this server") == check(
+            migrated_db, key
+        )

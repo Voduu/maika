@@ -110,13 +110,16 @@ class PermissionKey:
     ``owner_only`` keys are fixed: only the owner passes, and no
     override or level changes that. ``protected`` keys pass for
     everyone, and no block, override or level removes them. A key
-    cannot be both.
+    cannot be both. ``description`` is a one-line summary for
+    ``/perm keys``; a key that belongs to a command can leave it
+    empty, and the command's description is used.
     """
 
     key: str
     default_level: Level
     owner_only: bool = False
     protected: bool = False
+    description: str = ""
 
     def __post_init__(self) -> None:
         """Raise ValueError when the key's definition is wrong."""
@@ -239,10 +242,16 @@ def _guilds_to_check(guild_id: int) -> tuple[int, ...]:
     return (guild_id, GLOBAL_GUILD_ID)
 
 
-def _detail_scope(guild_id: int) -> str:
-    """Return "everywhere" for the global row, else "server <id>"."""
+def _detail_scope(guild_id: int, server_label: str | None) -> str:
+    """Return how a deciding row's scope reads in a decision detail.
+
+    "everywhere" for the global row. A server row reads as
+    ``server_label`` when one is given, otherwise "server <id>".
+    """
     if guild_id == GLOBAL_GUILD_ID:
         return DETAIL_SCOPE_GLOBAL
+    if server_label is not None:
+        return server_label
     return DETAIL_SCOPE_SERVER.format(guild_id=guild_id)
 
 
@@ -277,7 +286,11 @@ def find_override(
 
 
 def _check_block(
-    connection: sqlite3.Connection, user_id: int, key: str, guild_id: int
+    connection: sqlite3.Connection,
+    user_id: int,
+    key: str,
+    guild_id: int,
+    server_label: str | None,
 ) -> Decision | None:
     """Return a refusal when a block applies to the key, else None.
 
@@ -311,12 +324,19 @@ def _check_block(
     return Decision(
         allowed=False,
         source=DecisionSource.BLOCK,
-        detail=f"{strictest_kind} block, {_detail_scope(strictest_guild)}",
+        detail=(
+            f"{strictest_kind} block, "
+            f"{_detail_scope(strictest_guild, server_label)}"
+        ),
     )
 
 
 def _check_overrides(
-    connection: sqlite3.Connection, user_id: int, key: str, guild_id: int
+    connection: sqlite3.Connection,
+    user_id: int,
+    key: str,
+    guild_id: int,
+    server_label: str | None,
 ) -> Decision | None:
     """Return the decision of the first override row found, or None."""
     for pattern in override_patterns(key):
@@ -329,7 +349,7 @@ def _check_overrides(
                 source=DecisionSource.OVERRIDE,
                 detail=(
                     f"{effect} override on {pattern}, "
-                    f"{_detail_scope(lookup_guild)}"
+                    f"{_detail_scope(lookup_guild, server_label)}"
                 ),
             )
     return None
@@ -343,12 +363,18 @@ def check_permission(
     user_id: int,
     key: str,
     guild_id: int,
+    server_label: str | None = None,
 ) -> Decision:
     """Decide whether a person may use a permission key.
 
     The steps run in the order given in the module docstring, and
     the first step that decides returns. ``guild_id`` is the server
     where the key is used, or 0 outside a server.
+
+    ``server_label`` only changes the wording of the detail: when a
+    server row decides, the detail names the scope with the label
+    (for example "this server") instead of "server <id>". A global
+    row always reads "everywhere".
 
     An unknown key raises UnknownPermissionKeyError, for the owner
     too, so a typo in a key is never silently allowed.
@@ -366,11 +392,13 @@ def check_permission(
     if entry.protected:
         return Decision(True, DecisionSource.PROTECTED, f"{key} is protected")
 
-    block = _check_block(connection, user_id, key, guild_id)
+    block = _check_block(connection, user_id, key, guild_id, server_label)
     if block is not None:
         return block
 
-    override = _check_overrides(connection, user_id, key, guild_id)
+    override = _check_overrides(
+        connection, user_id, key, guild_id, server_label
+    )
     if override is not None:
         return override
 

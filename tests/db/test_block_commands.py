@@ -569,12 +569,9 @@ def test_show_reflects_a_block(migrated_db):
     block(migrated_db, "all", scope=SERVER)
 
     lines = show()
-    assert f"`cat.view`: denied (block: all block, server {GUILD})" in lines
-    assert f"`chat.talk`: denied (block: all block, server {GUILD})" in lines
-    assert (
-        "`memory.forget`: allowed (protected: memory.forget is protected)"
-        in lines
-    )
+    assert "`cat.view`: denied (block: all block, this server)" in lines
+    assert "`chat.talk`: denied (block: all block, this server)" in lines
+    assert "`memory.forget`: allowed (protected)" in lines
 
 
 # Registry entries

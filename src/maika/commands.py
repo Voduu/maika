@@ -27,6 +27,9 @@ COMMAND_WORD_MAX_LENGTH = 32
 DESCRIPTION_MIN_LENGTH = 1
 DESCRIPTION_MAX_LENGTH = 100
 
+# Joins the descriptions of several commands that share one key.
+KEY_DESCRIPTION_SEPARATOR = "; "
+
 
 class CommandCategory(enum.Enum):
     """The help categories of design section 2.6.
@@ -189,6 +192,23 @@ class CommandRegistry:
     def permission_registry(self) -> PermissionRegistry:
         """Return a PermissionRegistry of every distinct key."""
         return self._permission_registry
+
+    def key_description(self, key: str) -> str:
+        """Return a one-line description of a permission key.
+
+        That is the key's own description when it has one, otherwise
+        the descriptions of the commands that use the key, sorted by
+        command name and joined with "; ". A key with neither returns
+        "". Raise UnknownPermissionKeyError for an unknown key.
+        """
+        entry = self._permission_registry.get(key)
+        if entry.description:
+            return entry.description
+        return KEY_DESCRIPTION_SEPARATOR.join(
+            definition.description
+            for definition in self.commands()
+            if definition.key.key == key
+        )
 
 
 def _add_key(keys: dict[str, PermissionKey], entry: PermissionKey) -> None:

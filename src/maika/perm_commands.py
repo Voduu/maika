@@ -30,6 +30,7 @@ from maika.permissions import (
     EFFECT_DENY,
     KEY_PATTERN,
     KEY_SEPARATOR,
+    DecisionSource,
     Level,
     PermissionKey,
     PermissionRegistry,
@@ -143,6 +144,12 @@ ALLOWED_LINE = "`{key}`: allowed ({source})"
 ALLOWED_DETAIL_LINE = "`{key}`: allowed ({source}: {detail})"
 DENIED_LINE = "`{key}`: denied ({source}: {detail})"
 LINE_SEPARATOR = "\n"
+
+# Sources whose detail only restates the source, so an allowed line
+# in /perm show names the source alone.
+SHORT_ALLOWED_SOURCES = frozenset(
+    {DecisionSource.OWNER, DecisionSource.PROTECTED}
+)
 
 # How the scope option of grant, deny and reset reads in a reply.
 SCOPE_TEXT = {
@@ -279,10 +286,13 @@ def perm_show(
     The first line names the level and the scope ("this server", or
     "everywhere" for ``guild_id`` 0). Then each key in the registry,
     sorted, gets one line from ``check_permission`` with the same
-    arguments the real check uses: "allowed (<source>: <detail>)" or
+    arguments the real check uses, plus ``server_label`` "this
+    server", so a deciding server row reads "this server" rather than
+    its ID: "allowed (<source>: <detail>)" or
     "denied (<source>: <detail>)", with the detail escaped so a ``*``
     in a pattern shows literally. An allowed line whose detail only
-    repeats the source (the owner) is "allowed (<source>)".
+    restates the source (SHORT_ALLOWED_SOURCES: the owner and
+    protected keys) is "allowed (<source>)".
     """
     lines = [
         _show_header(
@@ -300,12 +310,13 @@ def perm_show(
             user_id=target_id,
             key=key,
             guild_id=guild_id,
+            server_label=SCOPE_SERVER,
         )
         source = decision.source.value
         detail = discord.utils.escape_markdown(decision.detail)
         if not decision.allowed:
             line = DENIED_LINE.format(key=key, source=source, detail=detail)
-        elif decision.detail == source:
+        elif decision.source in SHORT_ALLOWED_SOURCES:
             line = ALLOWED_LINE.format(key=key, source=source)
         else:
             line = ALLOWED_DETAIL_LINE.format(
