@@ -11,6 +11,7 @@ import logging
 import sqlite3
 from collections.abc import Callable
 
+from maika import reply_helpers
 from maika.commands import CommandCategory, CommandDefinition
 from maika.database import GLOBAL_GUILD_ID
 from maika.foundation_settings import build_foundation_registry
@@ -109,7 +110,7 @@ UNKNOWN_SETTING_MESSAGE = "I don't know a setting called `{key}`."
 REJECTED_VALUE_MESSAGE = "`{key}` {rule}."
 SET_MESSAGE = "`{key}` is now `{new}` (was `{old}`)."
 SET_DEFAULT_NOTE = (
-    " This is the default value. `/config reset {key}` removes the "
+    "This is the default value. `/config reset {key}` removes the "
     "override, so later changes to the default apply."
 )
 ALREADY_SET_MESSAGE = "`{key}` is already `{value}`."
@@ -401,10 +402,16 @@ def config_set(
 
     old = display_value(definition, result.old_value)
     message = SET_MESSAGE.format(key=key, new=new, old=old)
+    notes = []
     if result.is_default:
-        message += SET_DEFAULT_NOTE.format(key=key)
+        notes.append(SET_DEFAULT_NOTE.format(key=key))
     _announce(announce, SET_ANNOUNCE_LINE.format(key=key, old=old, new=new))
-    return CommandResult.ok(message, data=result)
+    return CommandResult.ok(
+        reply_helpers.join_parts(
+            message, notes, reply_helpers.REPLY_PART_SEPARATOR
+        ),
+        data=result,
+    )
 
 
 def config_reset(

@@ -351,7 +351,7 @@ def test_block_notes_global_row(migrated_db):
     result = block(migrated_db, "chat", scope=SERVER)
 
     assert result.message == (
-        f"<@{ALEX}> is now blocked from chat (this server). "
+        f"<@{ALEX}> is now blocked from chat (this server).\n"
         f"Note: <@{ALEX}> is also blocked from chat and commands "
         "(everywhere)."
     )
@@ -364,9 +364,9 @@ def test_block_notes_global_first_then_servers_by_id(migrated_db):
     result = block(migrated_db, "chat", guild_id=OTHER_GUILD + 1)
 
     assert result.message == (
-        f"<@{ALEX}> is now blocked from chat (everywhere). "
+        f"<@{ALEX}> is now blocked from chat (everywhere).\n"
         f"Note: <@{ALEX}> is also blocked from chat and commands "
-        f"(server {GUILD}). "
+        f"(server {GUILD}).\n"
         f"Note: <@{ALEX}> is also blocked from chat "
         f"(server {OTHER_GUILD})."
     )
@@ -379,7 +379,7 @@ def test_block_unchanged_has_notes(migrated_db):
     result = block(migrated_db, "chat")
 
     assert result.message == (
-        f"<@{ALEX}> is already blocked from chat (everywhere). "
+        f"<@{ALEX}> is already blocked from chat (everywhere).\n"
         f"Note: <@{ALEX}> is also blocked from chat and commands "
         f"(server {OTHER_GUILD})."
     )
@@ -404,8 +404,8 @@ def test_unblock_lists_remaining_blocks(migrated_db):
     result = unblock(migrated_db, scope=SERVER, announce=announce)
 
     assert result.message == (
-        f"<@{ALEX}> is no longer blocked (this server). "
-        "Still blocked: chat and commands (everywhere). "
+        f"<@{ALEX}> is no longer blocked (this server).\n"
+        "Still blocked: chat and commands (everywhere).\n"
         f"Still blocked: chat and commands (server {OTHER_GUILD})."
     )
     # The announce line has no notes.
@@ -421,7 +421,7 @@ def test_unblock_everywhere_lists_server_rows(migrated_db):
     result = unblock(migrated_db)
 
     assert result.message == (
-        f"<@{ALEX}> is no longer blocked (everywhere). "
+        f"<@{ALEX}> is no longer blocked (everywhere).\n"
         "Still blocked: chat (this server)."
     )
 
@@ -433,7 +433,7 @@ def test_unblock_in_dm_names_servers_by_id(migrated_db):
     result = unblock(migrated_db, guild_id=0)
 
     assert result.message == (
-        f"<@{ALEX}> is no longer blocked (everywhere). "
+        f"<@{ALEX}> is no longer blocked (everywhere).\n"
         f"Still blocked: chat and commands (server {GUILD})."
     )
 
@@ -444,7 +444,7 @@ def test_no_block_reply_lists_remaining(migrated_db):
     result = unblock(migrated_db)
 
     assert result.message == (
-        f"<@{ALEX}> has no block (everywhere). "
+        f"<@{ALEX}> has no block (everywhere).\n"
         f"Still blocked: chat (server {OTHER_GUILD})."
     )
 
