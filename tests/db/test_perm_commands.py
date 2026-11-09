@@ -393,9 +393,9 @@ def test_show_override_and_block(migrated_db):
         f"`chat.talk`: denied (block: chat block, server {GUILD})",
         "`config.get`: denied (owner_only_key: config.get is owner-only)",
         "`feed.remove`: denied (override: deny override on feed.\\*, "
-        "server 0)",
+        "everywhere)",
         "`feed.subscribe`: denied (override: deny override on feed.\\*, "
-        "server 0)",
+        "everywhere)",
         "`memory.view`: allowed (protected: memory.view is protected)",
     ]
     assert lines[1:] == expected_lines(migrated_db, ALEX)
@@ -417,7 +417,7 @@ def test_show_allowed_detail_is_escaped(migrated_db):
 
     assert (
         "`feed.remove`: allowed (override: allow override on feed.\\*, "
-        "server 0)"
+        "everywhere)"
     ) in lines
     assert lines[1:] == expected_lines(migrated_db, ALEX)
 

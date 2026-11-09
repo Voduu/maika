@@ -322,7 +322,7 @@ def test_global_all_with_server_chat_applies_all(migrated_db):
         decision = check(migrated_db, key)
         assert not decision.allowed
         assert decision.source is DecisionSource.BLOCK
-        assert decision.detail == "all block, server 0"
+        assert decision.detail == "all block, everywhere"
 
 
 def test_global_chat_with_server_all_applies_all(migrated_db):
@@ -338,7 +338,7 @@ def test_global_chat_with_server_all_applies_all(migrated_db):
     assert elsewhere.allowed
     assert elsewhere.source is DecisionSource.LEVEL
     talk = check(migrated_db, "chat.talk", guild_id=OTHER_GUILD)
-    assert talk.detail == "chat block, server 0"
+    assert talk.detail == "chat block, everywhere"
 
 
 def test_both_chat_applies_chat_and_names_server(migrated_db):
@@ -377,7 +377,7 @@ def test_only_global_row(migrated_db, kind):
 
     talk = check(migrated_db, "chat.talk")
     assert not talk.allowed
-    assert talk.detail == f"{kind} block, server 0"
+    assert talk.detail == f"{kind} block, everywhere"
     assert check(migrated_db, "feed.list").allowed is (kind == "chat")
 
 
@@ -395,7 +395,7 @@ def test_guild_zero_uses_only_global_block(migrated_db):
     add_block(migrated_db, "all", guild_id=0)
     decision = check(migrated_db, "feed.list", guild_id=0)
     assert not decision.allowed
-    assert decision.detail == "all block, server 0"
+    assert decision.detail == "all block, everywhere"
 
 
 def test_other_users_block_does_not_apply(migrated_db):
@@ -426,7 +426,9 @@ def test_more_specific_pattern_wins(migrated_db, winner, loser):
 
     assert decision.allowed is (winner[1] == "allow")
     assert decision.source is DecisionSource.OVERRIDE
-    assert decision.detail == f"{winner[1]} override on {winner[0]}, server 0"
+    assert decision.detail == (
+        f"{winner[1]} override on {winner[0]}, everywhere"
+    )
 
 
 @pytest.mark.parametrize("pattern", ["feed.remove", "feed.*", "*"])
@@ -456,7 +458,7 @@ def test_server_row_beats_global_row_in_same_pattern(migrated_db):
 
     elsewhere = check(migrated_db, "feed.remove", guild_id=OTHER_GUILD)
     assert not elsewhere.allowed
-    assert elsewhere.detail == "deny override on feed.remove, server 0"
+    assert elsewhere.detail == "deny override on feed.remove, everywhere"
 
 
 def test_exact_global_beats_area_server(migrated_db):
@@ -465,7 +467,7 @@ def test_exact_global_beats_area_server(migrated_db):
 
     decision = check(migrated_db, "feed.remove")
     assert not decision.allowed
-    assert decision.detail == "deny override on feed.remove, server 0"
+    assert decision.detail == "deny override on feed.remove, everywhere"
 
 
 def test_other_servers_row_is_ignored(migrated_db):

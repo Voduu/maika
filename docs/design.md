@@ -45,7 +45,7 @@ Scope target: Layer 1 and Layer 2, with the minimum go-live set in section 7 (st
 
 A refusal in conversation is silence. A refused slash command returns an ephemeral line from the fixed `denied` pool (3.9); the default text, used until that pool is built, is "You don't have permission for that." An override row holds user, key, allow or deny, and an optional server (9.3).
 
-**Commands (owner-only):** `/perm level` (set a person's level, 2.3), `/perm grant` (set allow), `/perm deny` (set deny), `/perm reset` (remove the override, returning the key to the person's level), `/perm show` (the expanded result for every key and what decided it), `/perm history` (every change made to one person), `/perm keys` (lists every key with autocomplete), `/block` and `/unblock` (see Blocks below). `/perm grant`, `/perm deny`, and `/perm reset` take a scope option: everywhere (the default) or this server.
+**Commands (owner-only):** `/perm level` (set a person's level, 2.3), `/perm grant` (set allow), `/perm deny` (set deny), `/perm reset` (remove the override, returning the key to the person's level), `/perm show` (the expanded result for every key and what decided it), `/perm history` (every change made to one person), `/perm keys` (lists every key with autocomplete), `/block` and `/unblock` (see Blocks below). `/perm grant`, `/perm deny`, and `/perm reset` take a scope option: everywhere (the default) or this server. `/block` and `/unblock` take the same scope option.
 
 **Wildcards.** `feed.*` covers every key beginning with `feed.`, including keys added later. The latest command overwrites earlier settings for every key it covers: a wildcard grant, deny, or reset removes the rows beneath it (for `*`, the exact-key rows and the `area.*` rows), and the bot's reply lists what it cleared ("Cleared 1 exception: `feed.notify` deny"). For "everything except one", grant the wildcard first, then deny the single key. The rule is broad command first, exceptions after. Owner-only fixed keys and protected keys ignore wildcards, including `*`. Every change goes to the audit log. A reply also notes the person's rows for the same key in other scopes (for example "Note: `*` is still denied (this server)"), so a row left in another scope is visible.
 
@@ -1104,8 +1104,6 @@ Ideas not yet scheduled:
   - Weight lists (comma-separated `value:percent` text, section 10 introduction) have no setting type yet; add one or keep them as TEXT with their own checks when the first such setting arrives.
   - When `/config set` stores a value equal to the default, the reply should say so and mention `/config reset`, because an override equal to the default does not follow later default changes.
 - Command layer follow-ups (permissions):
-  - Validate that the target of `/perm` and `/block` is a real, non-bot user before calling the permission store. `/perm level` does this; the other commands do it when they are built.
-  - `/block` and `/unblock` need a scope option (this server or everywhere); the reply lists the block rows that remain.
   - Confirm before a wildcard `/perm` command that would clear existing rows, listing the rows and offering Confirm and Cancel.
   - `/perm undo`: restore the rows a wildcard command cleared, using the audit log entries it wrote.
   - Show stored text in Discord with the characters escaped or in code formatting, so an asterisk is not read as Markdown italics. Keys and patterns in `/perm show` are escaped; what remains is audit notes and the `/perm history` output.
@@ -1226,7 +1224,7 @@ CREATE TABLE blocks (
 - A block never touches override rows, so `/unblock` restores the person exactly as they were.
 - A blocked person's messages, and those of a person with a `chat.talk` deny override, are dropped in the intake guards, before classification: no reply, no reaction, no mood, relationship, trait, or memory writes, and no place in sessions or batches. Stored data stays.
 - A slash command that is refused returns an ephemeral line from the fixed `denied` pool (3.9), or "You don't have permission for that." until that pool is built. Discord requires a response to every command.
-- Commands: `/block user:@x kind:chat|all` and `/unblock user:@x`, both under the fixed `perm.*` keys.
+- Commands: `/block user:@x kind:chat|all` and `/unblock user:@x`, both under the fixed `perm.*` keys. Both take a scope option: everywhere (the default) or this server.
 
 ### 9.5 `audit_log`
 

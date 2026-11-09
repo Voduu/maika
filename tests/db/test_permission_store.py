@@ -7,6 +7,8 @@ from maika.permission_store import (
     BlockChange,
     LevelChange,
     PermissionChangeError,
+    ScopedBlock,
+    find_user_blocks,
     remove_block,
     set_block,
     set_level,
@@ -442,6 +444,26 @@ def test_remove_block_audit_failure_leaves_blocks(migrated_db):
     assert not migrated_db.in_transaction
     assert block_rows(migrated_db) == blocks_before
     assert audit_rows(migrated_db) == audit_before
+
+
+# find_user_blocks
+
+
+def test_find_user_blocks_global_first_then_servers(migrated_db):
+    block(migrated_db, "all", guild_id=GUILD + 1)
+    block(migrated_db, "chat", guild_id=GUILD)
+    block(migrated_db, "chat")
+    block(migrated_db, "all", user_id=SAM)
+
+    assert find_user_blocks(migrated_db, user_id=ALEX) == (
+        ScopedBlock(0, "chat"),
+        ScopedBlock(GUILD, "chat"),
+        ScopedBlock(GUILD + 1, "all"),
+    )
+
+
+def test_find_user_blocks_none(migrated_db):
+    assert find_user_blocks(migrated_db, user_id=ALEX) == ()
 
 
 # End to end with check_permission
