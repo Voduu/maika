@@ -1,8 +1,9 @@
-"""The foundation settings: log channels, log levels and backups.
+"""The foundation settings: logging, backups and command lane.
 
 These are the 20 definitions of ``docs/design.md`` section 10.15,
-copied exactly. Other sections add their settings with the features
-that use them.
+copied exactly, and ``commands.confirm_timeout_seconds`` from 10.2
+for the confirmation buttons. Other sections add their settings with
+the features that use them.
 """
 
 import datetime
@@ -15,8 +16,14 @@ from maika.settings import (
 )
 
 LOGGING_CATEGORY = "logging"
+COMMANDS_CATEGORY = "commands"
 
 LOG_LEVEL_CHOICES = ("debug", "info", "warning", "error")
+
+CONFIRM_TIMEOUT_KEY = "commands.confirm_timeout_seconds"
+CONFIRM_TIMEOUT_DEFAULT_SECONDS = 60
+CONFIRM_TIMEOUT_MIN_SECONDS = 10
+CONFIRM_TIMEOUT_MAX_SECONDS = 600
 
 FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
     SettingDefinition(
@@ -224,6 +231,17 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         minimum=1,
         maximum=52,
         description="Weekly offsite copies kept.",
+    ),
+    SettingDefinition(
+        key=CONFIRM_TIMEOUT_KEY,
+        category=COMMANDS_CATEGORY,
+        level=SettingLevel.ADVANCED,
+        server_scope=False,
+        value_type=ValueType.INT,
+        default=CONFIRM_TIMEOUT_DEFAULT_SECONDS,
+        minimum=CONFIRM_TIMEOUT_MIN_SECONDS,
+        maximum=CONFIRM_TIMEOUT_MAX_SECONDS,
+        description="Seconds before confirmation buttons stop working.",
     ),
 )
 

@@ -93,6 +93,26 @@ def test_changed_value(migrated_db):
     )
 
 
+def test_confirm_timeout_default(migrated_db):
+    result = config_get(migrated_db, "commands.confirm_timeout_seconds", 0)
+
+    assert result == CommandResult.ok(
+        "`commands.confirm_timeout_seconds = 60` (default)\n"
+        "Seconds before confirmation buttons stop working.\n"
+        "Type: int. Range: 10 to 600. Default: 60."
+    )
+
+
+def test_confirm_timeout_changed(migrated_db):
+    store(migrated_db, "commands.confirm_timeout_seconds", "120")
+
+    result = config_get(migrated_db, "commands.confirm_timeout_seconds", GUILD)
+
+    assert first_line(result) == (
+        "`commands.confirm_timeout_seconds = 120` (changed)"
+    )
+
+
 def test_global_setting_in_a_server_uses_global_row(migrated_db):
     store(migrated_db, "backups.days_kept", "14")
 

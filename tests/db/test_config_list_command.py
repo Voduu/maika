@@ -112,10 +112,10 @@ def test_overview_with_foundation_settings(migrated_db):
     every = config_list(migrated_db, SETTINGS, None, True)
 
     assert basic.message == (
-        "logging (10)\nUse `/config list category:<name>`."
+        "logging (10)\ncommands (0)\nUse `/config list category:<name>`."
     )
     assert every.message == (
-        "logging (20)\nUse `/config list category:<name>`."
+        "logging (20)\ncommands (1)\nUse `/config list category:<name>`."
     )
 
 
@@ -439,7 +439,7 @@ def test_list_callback_owner_overview(migrated_db):
     asyncio.run(subcommand(client, "list").callback(interaction))
 
     assert reply(interaction) == (
-        "logging (10)\nUse `/config list category:<name>`.",
+        "logging (10)\ncommands (0)\nUse `/config list category:<name>`.",
         True,
     )
 

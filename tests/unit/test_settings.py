@@ -3,6 +3,8 @@ import datetime
 import pytest
 
 from maika.foundation_settings import (
+    COMMANDS_CATEGORY,
+    CONFIRM_TIMEOUT_KEY,
     FOUNDATION_SETTINGS,
     LOGGING_CATEGORY,
     build_foundation_registry,
@@ -651,11 +653,12 @@ FOUNDATION_KEYS = {
     "backups.days_kept",
     "backups.migration_copies",
     "backups.offsite_copies_kept",
+    "commands.confirm_timeout_seconds",
 }
 
 
-def test_foundation_has_exactly_20_settings():
-    assert len(FOUNDATION_SETTINGS) == 20
+def test_foundation_has_exactly_21_settings():
+    assert len(FOUNDATION_SETTINGS) == 21
 
 
 def test_foundation_keys_match_design():
@@ -669,9 +672,13 @@ def test_foundation_defaults_are_valid():
             assert_round_trip(definition, definition.default)
 
 
-def test_foundation_all_in_logging_category():
+def test_foundation_categories():
     assert LOGGING_CATEGORY == "logging"
-    assert {d.category for d in FOUNDATION_SETTINGS} == {"logging"}
+    assert COMMANDS_CATEGORY == "commands"
+    assert {d.category for d in FOUNDATION_SETTINGS} == {
+        "logging",
+        "commands",
+    }
 
 
 def test_foundation_all_global():
@@ -682,6 +689,39 @@ def test_foundation_registry():
     registry = build_foundation_registry()
     assert set(registry.keys()) == FOUNDATION_KEYS
     assert len(registry.definitions_in_category("logging")) == 20
+    assert [d.key for d in registry.definitions_in_category("commands")] == [
+        "commands.confirm_timeout_seconds"
+    ]
+
+
+def test_confirm_timeout_definition():
+    definition = build_foundation_registry().get(CONFIRM_TIMEOUT_KEY)
+
+    assert CONFIRM_TIMEOUT_KEY == "commands.confirm_timeout_seconds"
+    assert definition.category == "commands"
+    assert definition.level is SettingLevel.ADVANCED
+    assert definition.server_scope is False
+    assert definition.value_type is ValueType.INT
+    assert definition.default == 60
+    assert definition.minimum == 10
+    assert definition.maximum == 600
+    assert definition.choices is None
+    assert definition.description == (
+        "Seconds before confirmation buttons stop working."
+    )
+
+
+@pytest.mark.parametrize("text", ["10", "60", "600"])
+def test_confirm_timeout_accepts_range(text):
+    definition = build_foundation_registry().get(CONFIRM_TIMEOUT_KEY)
+    assert parse_value(definition, text) == int(text)
+
+
+@pytest.mark.parametrize("text", ["9", "601", "0", "-5"])
+def test_confirm_timeout_rejects_outside_range(text):
+    definition = build_foundation_registry().get(CONFIRM_TIMEOUT_KEY)
+    with pytest.raises(SettingValueError):
+        parse_value(definition, text)
 
 
 @pytest.mark.parametrize(
