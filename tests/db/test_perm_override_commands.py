@@ -241,7 +241,7 @@ def test_server_reset_leaves_global_row(migrated_db):
     result = run(migrated_db, "reset", "cat.view", scope=SERVER)
 
     assert result.message == (
-        f"<@{ALEX}>: `cat.view` exception removed (this server). "
+        f"<@{ALEX}>: `cat.view` exception removed (this server).\n"
         "Note: `cat.view` is still allowed (everywhere)."
     )
     assert override_rows(migrated_db) == [
@@ -292,7 +292,7 @@ def test_wildcard_clears_one_row(migrated_db):
     )
 
     assert result.message == (
-        f"<@{ALEX}>: `feed.*` is now allowed (everywhere). Cleared 1 "
+        f"<@{ALEX}>: `feed.*` is now allowed (everywhere).\nCleared 1 "
         "exception: `feed.remove` deny."
     )
     assert announce.lines == [
@@ -312,7 +312,7 @@ def test_wildcard_clears_several_rows(migrated_db):
     result = confirm(run(migrated_db, "deny", "*", now=LATER))
 
     assert result.message == (
-        f"<@{ALEX}>: `*` is now denied (everywhere). Cleared 3 exceptions: "
+        f"<@{ALEX}>: `*` is now denied (everywhere).\nCleared 3 exceptions: "
         "`cat.*` deny, `feed.remove` deny, `feed.subscribe` allow."
     )
     assert override_rows(migrated_db) == [(ALEX, "*", "deny", 0, OWNER, LATER)]
@@ -339,7 +339,7 @@ def test_same_effect_wildcard_still_clears(migrated_db):
     result = confirm(run(migrated_db, "grant", "feed.*", now=LATER))
 
     assert result.message == (
-        f"<@{ALEX}>: `feed.*` is now allowed (everywhere). Cleared 1 "
+        f"<@{ALEX}>: `feed.*` is now allowed (everywhere).\nCleared 1 "
         "exception: `feed.remove` deny."
     )
 
@@ -355,7 +355,7 @@ def test_reset_wildcard_lists_cleared_rows(migrated_db):
     )
 
     assert result.message == (
-        f"<@{ALEX}>: `*` exception removed (everywhere). Cleared 2 "
+        f"<@{ALEX}>: `*` exception removed (everywhere).\nCleared 2 "
         "exceptions: `cat.view` deny, `feed.remove` deny."
     )
     assert announce.lines == [
@@ -377,7 +377,7 @@ def test_global_grant_notes_server_deny(migrated_db):
     result = run(migrated_db, "grant", "cat.view", announce=announce)
 
     assert result.message == (
-        f"<@{ALEX}>: `cat.view` is now allowed (everywhere). "
+        f"<@{ALEX}>: `cat.view` is now allowed (everywhere).\n"
         "Note: `cat.view` is still denied (this server)."
     )
     # The announce line is unchanged: no note.
@@ -394,7 +394,7 @@ def test_server_reset_notes_global_row(migrated_db):
     result = run(migrated_db, "reset", "*", scope=SERVER, announce=announce)
 
     assert result.message == (
-        f"<@{ALEX}>: `*` exception removed (this server). "
+        f"<@{ALEX}>: `*` exception removed (this server).\n"
         "Note: `*` is still denied (everywhere)."
     )
     assert announce.lines == [
@@ -410,7 +410,7 @@ def test_global_reset_notes_server_row(migrated_db):
     result = run(migrated_db, "reset", "*", announce=announce)
 
     assert result.message == (
-        f"<@{ALEX}>: `*` exception removed (everywhere). "
+        f"<@{ALEX}>: `*` exception removed (everywhere).\n"
         "Note: `*` is still denied (this server)."
     )
     assert announce.lines == [
@@ -427,7 +427,7 @@ def test_row_in_another_server_is_named_by_id(migrated_db):
     result = run(migrated_db, "grant", "cat.view")
 
     assert result.message == (
-        f"<@{ALEX}>: `cat.view` is now allowed (everywhere). "
+        f"<@{ALEX}>: `cat.view` is now allowed (everywhere).\n"
         f"Note: `cat.view` is still denied (server {OTHER_GUILD})."
     )
 
@@ -449,8 +449,8 @@ def test_two_other_rows_global_first(migrated_db):
     result = run(migrated_db, "deny", "cat.view", scope=SERVER)
 
     assert result.message == (
-        f"<@{ALEX}>: `cat.view` is now denied (this server). "
-        "Note: `cat.view` is still allowed (everywhere). "
+        f"<@{ALEX}>: `cat.view` is now denied (this server).\n"
+        "Note: `cat.view` is still allowed (everywhere).\n"
         f"Note: `cat.view` is still denied (server {OTHER_GUILD})."
     )
 
@@ -462,8 +462,8 @@ def test_server_rows_ordered_by_id(migrated_db):
     result = run(migrated_db, "deny", "cat.view")
 
     assert result.message == (
-        f"<@{ALEX}>: `cat.view` is now denied (everywhere). "
-        "Note: `cat.view` is still allowed (this server). "
+        f"<@{ALEX}>: `cat.view` is now denied (everywhere).\n"
+        "Note: `cat.view` is still allowed (this server).\n"
         f"Note: `cat.view` is still denied (server {OTHER_GUILD})."
     )
 
@@ -480,8 +480,8 @@ def test_note_follows_cleared_rows(migrated_db):
     result = confirm(run(migrated_db, "grant", "feed.*"))
 
     assert result.message == (
-        f"<@{ALEX}>: `feed.*` is now allowed (everywhere). Cleared 1 "
-        "exception: `feed.remove` deny. "
+        f"<@{ALEX}>: `feed.*` is now allowed (everywhere).\nCleared 1 "
+        "exception: `feed.remove` deny.\n"
         "Note: `feed.*` is still denied (this server)."
     )
 
@@ -494,7 +494,7 @@ def test_already_reply_has_note(migrated_db):
     result = run(migrated_db, "grant", "cat.view", announce=announce)
 
     assert result.message == (
-        f"<@{ALEX}>: `cat.view` is already allowed (everywhere). "
+        f"<@{ALEX}>: `cat.view` is already allowed (everywhere).\n"
         "Note: `cat.view` is still denied (this server)."
     )
     assert announce.lines == []
@@ -506,7 +506,7 @@ def test_no_exception_reply_has_note(migrated_db):
     result = run(migrated_db, "reset", "cat.view")
 
     assert result.message == (
-        f"<@{ALEX}>: `cat.view` has no exception (everywhere). "
+        f"<@{ALEX}>: `cat.view` has no exception (everywhere).\n"
         "Note: `cat.view` is still denied (this server)."
     )
 

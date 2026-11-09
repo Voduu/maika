@@ -9,7 +9,7 @@ import pytest
 from maika.bot import MaikaClient
 from maika.command_catalog import build_command_registry
 from maika.config import Config, Environment
-from maika.discord_adapter import ConfirmView
+from maika.discord_adapter import ConfirmView, split_message
 from maika.log_router import LogLevel, LogStream
 from maika.perm_commands import (
     CONFIRM_KEY_LIMIT,
@@ -246,7 +246,7 @@ def test_confirm_set_matches_the_old_write(migrated_db, command, pattern):
 
     assert result.confirmation is None
     assert result.message == (
-        f"<@{ALEX}>: `{pattern}` is now {word} (everywhere). Cleared 2 "
+        f"<@{ALEX}>: `{pattern}` is now {word} (everywhere).\nCleared 2 "
         "exceptions: `feed.remove` deny, `feed.subscribe` allow."
     )
     assert override_rows(migrated_db) == [
@@ -285,7 +285,7 @@ def test_confirm_reset_matches_the_old_write(migrated_db, pattern):
     result = asked.confirmation.on_confirm()
 
     assert result.message == (
-        f"<@{ALEX}>: `{pattern}` exception removed (everywhere). Cleared 2 "
+        f"<@{ALEX}>: `{pattern}` exception removed (everywhere).\nCleared 2 "
         "exceptions: `feed.remove` deny, `feed.subscribe` allow."
     )
     assert override_rows(migrated_db) == []
@@ -490,7 +490,7 @@ def test_slash_grant_asks_then_confirm_writes(migrated_db):
     )
     assert send.call_args.kwargs["ephemeral"] is True
     reply = (
-        f"<@{ALEX}>: `*` is now allowed (everywhere). Cleared 1 "
+        f"<@{ALEX}>: `*` is now allowed (everywhere).\nCleared 1 "
         "exception: `memory.add` deny."
     )
     assert press.response.edit_message.call_args.kwargs["content"] == reply
@@ -551,7 +551,7 @@ def test_slash_grant_notes_server_row_beneath_it(migrated_db):
     send = interaction.response.send_message
     assert "view" not in send.call_args.kwargs
     assert send.call_args.args == (
-        f"<@{ALEX}>: `memory.*` is now allowed (everywhere). Note: 1 "
+        f"<@{ALEX}>: `memory.*` is now allowed (everywhere).\nNote: 1 "
         "exception beneath it is still in effect in another scope: "
         "`memory.add` deny (this server).",
     )
@@ -572,7 +572,7 @@ def test_global_wildcard_notes_server_row(migrated_db, command):
 
     assert result.confirmation is None
     assert result.message.endswith(
-        " Note: 1 exception beneath it is still in effect in another "
+        "\nNote: 1 exception beneath it is still in effect in another "
         "scope: `feed.remove` deny (this server)."
     )
     assert (ALEX, "feed.remove", "deny", GUILD, OWNER, NOW) in override_rows(
@@ -587,7 +587,7 @@ def test_server_wildcard_notes_global_row(migrated_db):
 
     assert result.confirmation is None
     assert result.message == (
-        f"<@{ALEX}>: `*` is now denied (this server). Note: 1 exception "
+        f"<@{ALEX}>: `*` is now denied (this server).\nNote: 1 exception "
         "beneath it is still in effect in another scope: `cat.view` allow "
         "(everywhere)."
     )
@@ -604,7 +604,7 @@ def test_server_reset_wildcard_notes_global_rows(migrated_db):
     result = run(migrated_db, "reset", "*", scope=SERVER)
 
     assert result.message == (
-        f"<@{ALEX}>: `*` exception removed (this server). Note: 2 "
+        f"<@{ALEX}>: `*` exception removed (this server).\nNote: 2 "
         "exceptions beneath it are still in effect in another scope: "
         "`feed.*` allow (everywhere), `feed.remove` deny (everywhere)."
     )
@@ -617,7 +617,7 @@ def test_rows_in_several_other_scopes(migrated_db):
     result = run(migrated_db, "deny", "feed.*", scope=SERVER)
 
     assert result.message.endswith(
-        " Note: 2 exceptions beneath it are still in effect in other "
+        "\nNote: 2 exceptions beneath it are still in effect in other "
         "scopes: `feed.subscribe` allow (everywhere), `feed.remove` deny "
         f"(server {OTHER_GUILD})."
     )
@@ -639,8 +639,8 @@ def test_confirm_has_cleared_line_and_other_scope_note(migrated_db):
     result = asked.confirmation.on_confirm()
 
     assert result.message == (
-        f"<@{ALEX}>: `feed.*` is now allowed (everywhere). Cleared 1 "
-        "exception: `feed.remove` deny. Note: 1 exception beneath it is "
+        f"<@{ALEX}>: `feed.*` is now allowed (everywhere).\nCleared 1 "
+        "exception: `feed.remove` deny.\nNote: 1 exception beneath it is "
         "still in effect in another scope: `feed.subscribe` deny "
         "(this server)."
     )
@@ -657,8 +657,8 @@ def test_same_key_note_comes_before_covered_note(migrated_db):
     result = run(migrated_db, "grant", "feed.*")
 
     assert result.message == (
-        f"<@{ALEX}>: `feed.*` is now allowed (everywhere). "
-        "Note: `feed.*` is still denied (this server). Note: 1 exception "
+        f"<@{ALEX}>: `feed.*` is now allowed (everywhere).\n"
+        "Note: `feed.*` is still denied (this server).\nNote: 1 exception "
         "beneath it is still in effect in another scope: `feed.remove` "
         "allow (this server)."
     )
@@ -671,7 +671,7 @@ def test_unchanged_reply_has_covered_note(migrated_db):
     result = run(migrated_db, "grant", "feed.*")
 
     assert result.message == (
-        f"<@{ALEX}>: `feed.*` is already allowed (everywhere). Note: 1 "
+        f"<@{ALEX}>: `feed.*` is already allowed (everywhere).\nNote: 1 "
         "exception beneath it is still in effect in another scope: "
         "`feed.remove` deny (this server)."
     )
@@ -687,7 +687,7 @@ def test_more_than_ten_other_scope_rows(migrated_db):
         f"`many.key_{number:02d}` deny (this server)" for number in range(10)
     )
     assert result.message == (
-        f"<@{ALEX}>: `*` is now allowed (everywhere). Note: 13 exceptions "
+        f"<@{ALEX}>: `*` is now allowed (everywhere).\nNote: 13 exceptions "
         "beneath it are still in effect in another scope: "
         f"{listed}, and 3 more."
     )
@@ -715,6 +715,63 @@ def test_exact_key_has_no_covered_note(migrated_db):
     )
 
 
+# Each extra part on its own line
+
+
+def test_cleared_part_and_two_notes_each_get_a_line(migrated_db):
+    insert_row(migrated_db, "feed.remove", "deny")
+    insert_row(migrated_db, "feed.*", "deny", guild_id=GUILD)
+    insert_row(migrated_db, "feed.subscribe", "allow", guild_id=GUILD)
+    announce = Announcer()
+
+    result = run(
+        migrated_db, "grant", "feed.*", announce=announce
+    ).confirmation.on_confirm()
+
+    assert result.message.count("\n") == 3
+    assert result.message.splitlines() == [
+        f"<@{ALEX}>: `feed.*` is now allowed (everywhere).",
+        "Cleared 1 exception: `feed.remove` deny.",
+        "Note: `feed.*` is still denied (this server).",
+        "Note: 1 exception beneath it is still in effect in another "
+        "scope: `feed.subscribe` allow (this server).",
+    ]
+    (line,) = announce.lines
+    assert "\n" not in line
+    assert line == (
+        f"Override set: <@{ALEX}> `feed.*` allow (everywhere) by "
+        f"<@{OWNER}>. Cleared 1 exception: `feed.remove` deny."
+    )
+
+
+@pytest.mark.parametrize("command", COMMAND_NAMES)
+def test_one_sentence_reply_has_no_line_break(migrated_db, command):
+    if command == "reset":
+        insert_row(migrated_db, "feed.*", "deny")
+    announce = Announcer()
+
+    result = run(migrated_db, command, "feed.*", announce=announce)
+
+    assert "\n" not in result.message
+    assert all("\n" not in line for line in announce.lines)
+
+
+def test_long_reply_splits_between_parts(migrated_db):
+    seed_many_rows(migrated_db, 15, key_length=500)
+    for number in range(13):
+        key = f"many.other_{number:02d}".ljust(500, "y")
+        insert_row(migrated_db, key, "allow", guild_id=GUILD)
+
+    result = run(migrated_db, "deny", "*").confirmation.on_confirm()
+
+    # The reply fits one message, and every part is whole on its line.
+    assert split_message(result.message) == [result.message]
+    first, cleared, note = result.message.splitlines()
+    assert first == f"<@{ALEX}>: `*` is now denied (everywhere)."
+    assert cleared.startswith("Cleared 15 exceptions: ")
+    assert note.startswith("Note: 13 exceptions beneath it ")
+
+
 # The cleared list is capped
 
 
@@ -732,7 +789,7 @@ def test_three_cleared_rows_read_as_before(migrated_db):
         "`feed.subscribe` allow."
     )
     assert result.message == (
-        f"<@{ALEX}>: `*` is now denied (everywhere). {cleared}"
+        f"<@{ALEX}>: `*` is now denied (everywhere).\n{cleared}"
     )
     assert announce.lines == [
         f"Override set: <@{ALEX}> `*` deny (everywhere) by <@{OWNER}>. "
@@ -751,7 +808,7 @@ def test_fifteen_cleared_rows_show_ten_and_the_rest(migrated_db):
     listed = ", ".join(f"`many.key_{n:02d}` deny" for n in range(10))
     cleared = f"Cleared 15 exceptions: {listed}, and 5 more."
     assert result.message == (
-        f"<@{ALEX}>: `*` is now allowed (everywhere). {cleared}"
+        f"<@{ALEX}>: `*` is now allowed (everywhere).\n{cleared}"
     )
     assert announce.lines == [
         f"Override set: <@{ALEX}> `*` allow (everywhere) by <@{OWNER}>. "

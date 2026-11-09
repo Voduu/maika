@@ -343,7 +343,7 @@ def test_set_to_default_adds_note(migrated_db):
     result = run_set(migrated_db, DAYS_KEY, "30", announce, now=LATER)
 
     assert result.message == (
-        "`backups.days_kept` is now `30` (was `14`). This is the default "
+        "`backups.days_kept` is now `30` (was `14`).\nThis is the default "
         "value. `/config reset backups.days_kept` removes the override, "
         "so later changes to the default apply."
     )

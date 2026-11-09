@@ -174,7 +174,7 @@ OVERRIDE_SET_MESSAGE = "{mention}: `{key}` is now {word} ({scope})."
 OVERRIDE_UNCHANGED_MESSAGE = "{mention}: `{key}` is already {word} ({scope})."
 OVERRIDE_REMOVED_MESSAGE = "{mention}: `{key}` exception removed ({scope})."
 NO_OVERRIDE_MESSAGE = "{mention}: `{key}` has no exception ({scope})."
-CLEARED_PART = " Cleared {count} {noun}: {rows}."
+CLEARED_PART = "Cleared {count} {noun}: {rows}."
 CLEARED_ROW = "`{key}` {effect}"
 CLEARED_SEPARATOR = ", "
 CLEARED_NOUN_ONE = "exception"
@@ -185,10 +185,10 @@ OVERRIDE_SET_ANNOUNCE = (
 OVERRIDE_REMOVED_ANNOUNCE = (
     "Override removed: {mention} `{key}` ({scope}) by {actor}."
 )
-OTHER_SCOPE_NOTE = " Note: `{key}` is still {word} ({scope})."
+OTHER_SCOPE_NOTE = "Note: `{key}` is still {word} ({scope})."
 # The note for rows beneath a wildcard that stay in other scopes.
 COVERED_ELSEWHERE_NOTE = (
-    " Note: {count} {noun} beneath it {verb} still in effect in "
+    "Note: {count} {noun} beneath it {verb} still in effect in "
     "{where}: {rows}."
 )
 COVERED_ELSEWHERE_ROW = "`{key}` {effect} ({scope})"
@@ -391,15 +391,15 @@ def _capped_rows(parts: list[str]) -> str:
     return CLEARED_SEPARATOR.join(shown)
 
 
-def _cleared_part(change: OverrideChange) -> str:
-    """Return " Cleared N exception(s): ..." or "" when none were.
+def _cleared_parts(change: OverrideChange) -> list[str]:
+    """Return ["Cleared N exception(s): ..."], or [] when none were.
 
     N is the total. At most ``CONFIRM_ROW_LIMIT`` rows are named, each
     key cut to ``CONFIRM_KEY_LIMIT``, then "and N more". The audit log
     keeps one entry per cleared row.
     """
     if not change.cleared:
-        return ""
+        return []
     count = len(change.cleared)
     noun = CLEARED_NOUN_ONE if count == 1 else CLEARED_NOUN_MANY
     rows = _capped_rows(
@@ -410,7 +410,7 @@ def _cleared_part(change: OverrideChange) -> str:
             for cleared in change.cleared
         ]
     )
-    return CLEARED_PART.format(count=count, noun=noun, rows=rows)
+    return [CLEARED_PART.format(count=count, noun=noun, rows=rows)]
 
 
 def _other_scope_notes(
@@ -420,15 +420,15 @@ def _other_scope_notes(
     pattern: str,
     changed_guild: int,
     command_guild: int,
-) -> str:
+) -> list[str]:
     """Return a note for each of the person's rows in another scope.
 
     Only rows for exactly ``pattern`` count, and not the row in
     ``changed_guild`` (the scope the command used). The global row
     comes first, then servers by ID. With no such row the result is
-    "".
+    [].
     """
-    notes = [
+    return [
         OTHER_SCOPE_NOTE.format(
             key=pattern,
             word=EFFECT_WORDS[row.effect],
@@ -439,29 +439,28 @@ def _other_scope_notes(
         )
         if row.guild_id != changed_guild
     ]
-    return "".join(notes)
 
 
-def _covered_elsewhere_note(
+def _covered_elsewhere_notes(
     connection: sqlite3.Connection,
     *,
     target_id: int,
     pattern: str,
     changed_guild: int,
     command_guild: int,
-) -> str:
-    """Return a note for rows beneath a wildcard in other scopes.
+) -> list[str]:
+    """Return the note for rows beneath a wildcard in other scopes.
 
     Those rows are what the wildcard would clear in ``changed_guild``
     but sit in another scope, so they still decide their keys there.
     At most ``CONFIRM_ROW_LIMIT`` rows are named, then "and N more".
-    An exact key, or no such row, gives "".
+    An exact key, or no such row, gives [].
     """
     rows = find_covered_in_other_scopes(
         connection, user_id=target_id, pattern=pattern, guild_id=changed_guild
     )
     if not rows:
-        return ""
+        return []
     count = len(rows)
     many_scopes = len({row.guild_id for row in rows}) > 1
     parts = [
@@ -472,7 +471,7 @@ def _covered_elsewhere_note(
         )
         for row in rows
     ]
-    return COVERED_ELSEWHERE_NOTE.format(
+    note = COVERED_ELSEWHERE_NOTE.format(
         count=count,
         noun=CLEARED_NOUN_ONE if count == 1 else CLEARED_NOUN_MANY,
         verb=(
@@ -487,6 +486,7 @@ def _covered_elsewhere_note(
         ),
         rows=_capped_rows(parts),
     )
+    return [note]
 
 
 def _cut_key(key: str) -> str:
@@ -689,13 +689,14 @@ def _write_override(
         pattern=pattern,
         changed_guild=row_guild,
         command_guild=guild_id,
-    ) + _covered_elsewhere_note(
+    ) + _covered_elsewhere_notes(
         connection,
         target_id=target_id,
         pattern=pattern,
         changed_guild=row_guild,
         command_guild=guild_id,
     )
+    reply_separator = reply_helpers.REPLY_PART_SEPARATOR
     if not change.changed:
         if effect is None:
             message = NO_OVERRIDE_MESSAGE.format(
@@ -708,9 +709,12 @@ def _write_override(
                 word=EFFECT_WORDS[effect],
                 scope=scope_text,
             )
-        return CommandResult.ok(message + notes, data=change)
+        return CommandResult.ok(
+            reply_helpers.join_parts(message, notes, reply_separator),
+            data=change,
+        )
 
-    cleared = _cleared_part(change)
+    cleared = _cleared_parts(change)
     actor = reply_helpers.mention(actor_id)
     if effect is None:
         message = OVERRIDE_REMOVED_MESSAGE.format(
@@ -733,8 +737,17 @@ def _write_override(
             scope=scope_text,
             actor=actor,
         )
-    reply_helpers.announce(announce, line + cleared, "an override change")
-    return CommandResult.ok(message + cleared + notes, data=change)
+    reply_helpers.announce(
+        announce,
+        reply_helpers.join_parts(
+            line, cleared, reply_helpers.ANNOUNCE_PART_SEPARATOR
+        ),
+        "an override change",
+    )
+    return CommandResult.ok(
+        reply_helpers.join_parts(message, cleared + notes, reply_separator),
+        data=change,
+    )
 
 
 def perm_grant(

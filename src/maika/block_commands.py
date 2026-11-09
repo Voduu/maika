@@ -79,9 +79,9 @@ BLOCK_UNCHANGED_MESSAGE = "{mention} is already blocked from {word} ({scope})."
 BLOCK_REMOVED_MESSAGE = "{mention} is no longer blocked ({scope})."
 NO_BLOCK_MESSAGE = "{mention} has no block ({scope})."
 BLOCK_OTHER_SCOPE_NOTE = (
-    " Note: {mention} is also blocked from {word} ({scope})."
+    "Note: {mention} is also blocked from {word} ({scope})."
 )
-UNBLOCK_REMAINING_NOTE = " Still blocked: {word} ({scope})."
+UNBLOCK_REMAINING_NOTE = "Still blocked: {word} ({scope})."
 BLOCK_SET_ANNOUNCE = "Block set: {mention} {kind} ({scope}) by {actor}."
 BLOCK_KIND_CHANGE = "{old_kind} to {new_kind}"
 BLOCK_REMOVED_ANNOUNCE = "Block removed: {mention} ({scope}) by {actor}."
@@ -106,15 +106,15 @@ def _other_block_notes(
     template: str,
     changed_guild: int,
     command_guild: int,
-) -> str:
+) -> list[str]:
     """Return a note for each of the person's blocks in another scope.
 
     ``template`` is BLOCK_OTHER_SCOPE_NOTE or UNBLOCK_REMAINING_NOTE.
     The row in ``changed_guild`` (the scope the command used) is left
     out. The global row comes first, then servers by ID. With no such
-    row the result is "".
+    row the result is [].
     """
-    notes = [
+    return [
         template.format(
             mention=reply_helpers.mention(target_id),
             word=KIND_WORDS[row.kind],
@@ -123,7 +123,18 @@ def _other_block_notes(
         for row in find_user_blocks(connection, user_id=target_id)
         if row.guild_id != changed_guild
     ]
-    return "".join(notes)
+
+
+def _reply(
+    message: str, notes: list[str], change: BlockChange
+) -> CommandResult:
+    """Return a success with each note on its own line."""
+    return CommandResult.ok(
+        reply_helpers.join_parts(
+            message, notes, reply_helpers.REPLY_PART_SEPARATOR
+        ),
+        data=change,
+    )
 
 
 def _announce_kind(change: BlockChange) -> str:
@@ -202,7 +213,7 @@ def block_user(
         message = BLOCK_UNCHANGED_MESSAGE.format(
             mention=mention, word=KIND_WORDS[kind], scope=scope_text
         )
-        return CommandResult.ok(message + notes, data=change)
+        return _reply(message, notes, change)
 
     reply_helpers.announce(
         announce,
@@ -217,7 +228,7 @@ def block_user(
     message = BLOCK_SET_MESSAGE.format(
         mention=mention, word=KIND_WORDS[kind], scope=scope_text
     )
-    return CommandResult.ok(message + notes, data=change)
+    return _reply(message, notes, change)
 
 
 def unblock_user(
@@ -272,7 +283,7 @@ def unblock_user(
     )
     if not change.changed:
         message = NO_BLOCK_MESSAGE.format(mention=mention, scope=scope_text)
-        return CommandResult.ok(message + notes, data=change)
+        return _reply(message, notes, change)
 
     reply_helpers.announce(
         announce,
@@ -284,4 +295,4 @@ def unblock_user(
         ANNOUNCE_SUBJECT,
     )
     message = BLOCK_REMOVED_MESSAGE.format(mention=mention, scope=scope_text)
-    return CommandResult.ok(message + notes, data=change)
+    return _reply(message, notes, change)

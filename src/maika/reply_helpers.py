@@ -1,7 +1,7 @@
 """Shared reply, scope and announce helpers for the owner commands."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from maika.database import GLOBAL_GUILD_ID
 
@@ -18,6 +18,22 @@ OTHER_SERVER_SCOPE = "server {guild_id}"
 # The scope option of the commands that write per-scope rows.
 SCOPE_OPTION_EVERYWHERE = "everywhere"
 SCOPE_OPTION_SERVER = "server"
+
+# A reply puts each extra part (what a command cleared, a note) on its
+# own line after the main sentence. An announce line to a log channel
+# stays on one line.
+REPLY_PART_SEPARATOR = "\n"
+ANNOUNCE_PART_SEPARATOR = " "
+
+
+def join_parts(main: str, parts: Iterable[str], separator: str) -> str:
+    """Return the main sentence followed by each extra part.
+
+    ``separator`` is REPLY_PART_SEPARATOR for a reply and
+    ANNOUNCE_PART_SEPARATOR for an announce line. With no parts the
+    result is ``main`` unchanged.
+    """
+    return separator.join([main, *parts])
 
 
 def mention(user_id: int) -> str:
