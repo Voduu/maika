@@ -9,12 +9,11 @@ entry in one transaction, and are announced through a callable (the
 bot posts them to ``#permissions``).
 """
 
-import logging
 import sqlite3
-from collections.abc import Callable
 
 import discord
 
+from maika import reply_helpers
 from maika.commands import CommandCategory, CommandDefinition
 from maika.database import GLOBAL_GUILD_ID
 from maika.permission_store import (
@@ -38,11 +37,14 @@ from maika.permissions import (
     check_permission,
     get_level,
 )
+from maika.reply_helpers import (
+    SCOPE_EVERYWHERE,
+    SCOPE_OPTION_EVERYWHERE,
+    SCOPE_OPTION_SERVER,
+    SCOPE_SERVER,
+    AnnounceFunction,
+)
 from maika.results import CommandResult, FailureKind
-
-logger = logging.getLogger(__name__)
-
-type AnnounceFunction = Callable[[str], None]
 
 PERM_LEVEL_NAME = "perm level"
 PERM_SHOW_NAME = "perm show"
@@ -127,7 +129,6 @@ PERM_RESET_COMMAND = CommandDefinition(
     example="/perm reset user:@Friend key:feed.subscribe",
 )
 
-MENTION = "<@{user_id}>"
 LEVEL_SET_MESSAGE = "{mention} is now level {number} ({name})."
 LEVEL_UNCHANGED_MESSAGE = "{mention} is already level {number} ({name})."
 BOT_TARGET_MESSAGE = "Bots can't be given a level."
@@ -138,16 +139,12 @@ LEVEL_ANNOUNCE_LINE = (
 
 SHOW_HEADER = "{mention}: level {number} ({name}), {scope}."
 SHOW_OWNER_HEADER = "{mention}: the owner, above the levels, {scope}."
-SCOPE_SERVER = "this server"
-SCOPE_EVERYWHERE = "everywhere"
 ALLOWED_LINE = "`{key}`: allowed ({source})"
 ALLOWED_DETAIL_LINE = "`{key}`: allowed ({source}: {detail})"
 DENIED_LINE = "`{key}`: denied ({source}: {detail})"
 LINE_SEPARATOR = "\n"
 
-# The scope option of grant, deny and reset.
-SCOPE_OPTION_EVERYWHERE = "everywhere"
-SCOPE_OPTION_SERVER = "server"
+# How the scope option of grant, deny and reset reads in a reply.
 SCOPE_TEXT = {
     SCOPE_OPTION_EVERYWHERE: SCOPE_EVERYWHERE,
     SCOPE_OPTION_SERVER: SCOPE_SERVER,
@@ -175,30 +172,11 @@ OVERRIDE_REMOVED_ANNOUNCE = (
     "Override removed: {mention} `{key}` ({scope}) by {actor}."
 )
 OTHER_SCOPE_NOTE = " Note: `{key}` is still {word} ({scope})."
-OTHER_SERVER_SCOPE = "server {guild_id}"
 
 
 def level_name(level: Level) -> str:
     """Return a level's display name, such as "Trusted"."""
     return level.name.title()
-
-
-def _mention(user_id: int) -> str:
-    """Return a user mention. Replies are sent with mentions off."""
-    return MENTION.format(user_id=user_id)
-
-
-def _announce(announce: AnnounceFunction, line: str, subject: str) -> None:
-    """Call ``announce``, logging a failure instead of raising.
-
-    The change is already saved, so a failed announcement must not
-    turn the reply into a failure. ``subject`` names the change in
-    the console line, for example "a level change".
-    """
-    try:
-        announce(line)
-    except Exception:
-        logger.exception("Announcing %s failed.", subject)
 
 
 def perm_level(
@@ -238,7 +216,7 @@ def perm_level(
         # set_level refuses the owner, which is checked above.
         return CommandResult.fail(FailureKind.INVALID, OWNER_TARGET_MESSAGE)
 
-    mention = _mention(target_id)
+    mention = reply_helpers.mention(target_id)
     if not change.changed:
         return CommandResult.ok(
             LEVEL_UNCHANGED_MESSAGE.format(
@@ -249,13 +227,13 @@ def perm_level(
             data=change,
         )
 
-    _announce(
+    reply_helpers.announce(
         announce,
         LEVEL_ANNOUNCE_LINE.format(
             target=mention,
             old_name=level_name(change.old_level),
             new_name=level_name(change.new_level),
-            actor=_mention(actor_id),
+            actor=reply_helpers.mention(actor_id),
         ),
         "a level change",
     )
@@ -275,7 +253,7 @@ def _show_header(
     guild_id: int,
 ) -> str:
     """Return the first line of /perm show."""
-    mention = _mention(target_id)
+    mention = reply_helpers.mention(target_id)
     scope = SCOPE_EVERYWHERE if guild_id == GLOBAL_GUILD_ID else SCOPE_SERVER
     if target_id == owner_id:
         return SHOW_OWNER_HEADER.format(mention=mention, scope=scope)
@@ -355,23 +333,6 @@ def _names_nothing(registry: PermissionRegistry, pattern: str) -> bool:
     return False
 
 
-def _row_guild(scope: str, guild_id: int) -> int | None:
-    """Return the guild_id the row uses, or None for server in a DM.
-
-    Raise ValueError for a scope that is not a known option.
-    """
-    if scope == SCOPE_OPTION_EVERYWHERE:
-        return GLOBAL_GUILD_ID
-    if scope == SCOPE_OPTION_SERVER:
-        if guild_id == GLOBAL_GUILD_ID:
-            return None
-        return guild_id
-    raise ValueError(
-        f"scope must be {SCOPE_OPTION_EVERYWHERE!r} or "
-        f"{SCOPE_OPTION_SERVER!r}, not {scope!r}."
-    )
-
-
 def _cleared_part(change: OverrideChange) -> str:
     """Return " Cleared N exception(s): ..." or "" when none were."""
     if not change.cleared:
@@ -383,19 +344,6 @@ def _cleared_part(change: OverrideChange) -> str:
         for cleared in change.cleared
     )
     return CLEARED_PART.format(count=count, noun=noun, rows=rows)
-
-
-def _row_scope_text(row_guild: int, command_guild: int) -> str:
-    """Return how a stored row's scope reads in a note.
-
-    "everywhere" for the global row, "this server" for the server
-    where the command ran, and "server <id>" for any other server.
-    """
-    if row_guild == GLOBAL_GUILD_ID:
-        return SCOPE_EVERYWHERE
-    if row_guild == command_guild:
-        return SCOPE_SERVER
-    return OTHER_SERVER_SCOPE.format(guild_id=row_guild)
 
 
 def _other_scope_notes(
@@ -417,7 +365,7 @@ def _other_scope_notes(
         OTHER_SCOPE_NOTE.format(
             key=pattern,
             word=EFFECT_WORDS[row.effect],
-            scope=_row_scope_text(row.guild_id, command_guild),
+            scope=reply_helpers.row_scope_text(row.guild_id, command_guild),
         )
         for row in find_key_overrides(
             connection, user_id=target_id, key=pattern
@@ -455,7 +403,7 @@ def _change_override(
         return CommandResult.fail(
             FailureKind.INVALID, OVERRIDE_OWNER_TARGET_MESSAGE
         )
-    row_guild = _row_guild(scope, guild_id)
+    row_guild = reply_helpers.row_guild(scope, guild_id)
     if row_guild is None:
         return CommandResult.fail(
             FailureKind.INVALID, SERVER_SCOPE_IN_DM_MESSAGE
@@ -500,7 +448,7 @@ def _change_override(
             FailureKind.INVALID, discord.utils.escape_markdown(str(error))
         )
 
-    mention = _mention(target_id)
+    mention = reply_helpers.mention(target_id)
     scope_text = SCOPE_TEXT[scope]
     # Rows for the same pattern in other scopes stay in force, so the
     # reply (not the announce line) names them.
@@ -526,7 +474,7 @@ def _change_override(
         return CommandResult.ok(message + notes, data=change)
 
     cleared = _cleared_part(change)
-    actor = _mention(actor_id)
+    actor = reply_helpers.mention(actor_id)
     if effect is None:
         message = OVERRIDE_REMOVED_MESSAGE.format(
             mention=mention, key=pattern, scope=scope_text
@@ -548,7 +496,7 @@ def _change_override(
             scope=scope_text,
             actor=actor,
         )
-    _announce(announce, line + cleared, "an override change")
+    reply_helpers.announce(announce, line + cleared, "an override change")
     return CommandResult.ok(message + cleared + notes, data=change)
 
 

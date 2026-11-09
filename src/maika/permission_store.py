@@ -73,6 +73,11 @@ DELETE_BLOCK_SQL = (
     "DELETE FROM blocks WHERE user_id = :user_id AND guild_id = :guild_id"
 )
 
+SELECT_USER_BLOCKS_SQL = (
+    "SELECT guild_id, kind FROM blocks WHERE user_id = :user_id "
+    "ORDER BY guild_id"
+)
+
 SELECT_USER_OVERRIDES_SQL = (
     "SELECT key, effect FROM permission_overrides "
     "WHERE user_id = :user_id AND guild_id = :guild_id"
@@ -296,6 +301,31 @@ def remove_block(
             new_value=None,
         )
     return BlockChange(user_id, guild_id, old_kind, None, changed=True)
+
+
+@dataclass(frozen=True)
+class ScopedBlock:
+    """One stored block row, in one scope.
+
+    ``guild_id`` is 0 for the global row or a server ID.
+    """
+
+    guild_id: int
+    kind: str
+
+
+def find_user_blocks(
+    connection: sqlite3.Connection, *, user_id: int
+) -> tuple[ScopedBlock, ...]:
+    """Return a person's block rows in every scope.
+
+    The global row (``guild_id`` 0) comes first, then servers by ID.
+    Nothing is written.
+    """
+    rows = connection.execute(
+        SELECT_USER_BLOCKS_SQL, {"user_id": user_id}
+    ).fetchall()
+    return tuple(ScopedBlock(row["guild_id"], row["kind"]) for row in rows)
 
 
 class _PatternShape(enum.Enum):

@@ -77,6 +77,10 @@ OWNER_ONLY_KEYS = frozenset(
     }
 )
 
+# How a row's scope reads in a decision detail.
+DETAIL_SCOPE_GLOBAL = "everywhere"
+DETAIL_SCOPE_SERVER = "server {guild_id}"
+
 EFFECT_ALLOW = "allow"
 EFFECT_DENY = "deny"
 
@@ -235,6 +239,13 @@ def _guilds_to_check(guild_id: int) -> tuple[int, ...]:
     return (guild_id, GLOBAL_GUILD_ID)
 
 
+def _detail_scope(guild_id: int) -> str:
+    """Return "everywhere" for the global row, else "server <id>"."""
+    if guild_id == GLOBAL_GUILD_ID:
+        return DETAIL_SCOPE_GLOBAL
+    return DETAIL_SCOPE_SERVER.format(guild_id=guild_id)
+
+
 def get_level(connection: sqlite3.Connection, user_id: int) -> Level:
     """Return a person's level, or DEFAULT_LEVEL with no users row."""
     row = connection.execute(SELECT_LEVEL_SQL, (user_id,)).fetchone()
@@ -300,7 +311,7 @@ def _check_block(
     return Decision(
         allowed=False,
         source=DecisionSource.BLOCK,
-        detail=f"{strictest_kind} block, server {strictest_guild}",
+        detail=f"{strictest_kind} block, {_detail_scope(strictest_guild)}",
     )
 
 
@@ -317,7 +328,8 @@ def _check_overrides(
                 allowed=effect == EFFECT_ALLOW,
                 source=DecisionSource.OVERRIDE,
                 detail=(
-                    f"{effect} override on {pattern}, server {lookup_guild}"
+                    f"{effect} override on {pattern}, "
+                    f"{_detail_scope(lookup_guild)}"
                 ),
             )
     return None

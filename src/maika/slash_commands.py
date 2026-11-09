@@ -15,6 +15,12 @@ from collections.abc import Awaitable, Callable
 import discord
 from discord import app_commands
 
+from maika.block_commands import (
+    BLOCK_NAME,
+    UNBLOCK_NAME,
+    block_user,
+    unblock_user,
+)
 from maika.command_runner import CommandUsage
 from maika.commands import CommandRegistry
 from maika.config_commands import (
@@ -51,6 +57,8 @@ from maika.perm_commands import (
     perm_show,
 )
 from maika.permissions import (
+    BLOCK_KIND_ALL,
+    BLOCK_KIND_CHAT,
     KEY_SEPARATOR,
     WILDCARD,
     Level,
@@ -104,6 +112,10 @@ PERM_RESET_DESCRIPTION = "Remove a person's exception for a key"
 PERM_KEY_DESCRIPTION = "A permission key, area.* or *"
 PERM_SCOPE_DESCRIPTION = "Where it applies (default: Everywhere)"
 
+BLOCK_DESCRIPTION = "Block a person from chat, or from chat and commands"
+BLOCK_KIND_DESCRIPTION = "What to block"
+UNBLOCK_DESCRIPTION = "Remove a person's block"
+
 # One choice per level, named as the levels are shown in replies.
 LEVEL_CHOICES = [
     app_commands.Choice(name=level_name(level), value=level.value)
@@ -114,6 +126,18 @@ SCOPE_CHOICES = [
     app_commands.Choice(name="Everywhere", value=SCOPE_OPTION_EVERYWHERE),
     app_commands.Choice(name="This server", value=SCOPE_OPTION_SERVER),
 ]
+
+BLOCK_KIND_CHOICES = [
+    app_commands.Choice(name="Chat only", value=BLOCK_KIND_CHAT),
+    app_commands.Choice(name="Chat and commands", value=BLOCK_KIND_ALL),
+]
+
+
+def _scope_value(scope: app_commands.Choice[str] | None) -> str:
+    """Return the chosen scope, or everywhere when none was chosen."""
+    if scope is None:
+        return SCOPE_OPTION_EVERYWHERE
+    return scope.value
 
 
 def _cut_choice_name(text: str) -> str:
@@ -391,14 +415,15 @@ def build_perm_group(
     """Return the /perm group with its subcommands.
 
     ``log_usage`` receives each command call's usage record. Level
-    changes are announced to #permissions through ``log_router``.
+    and override changes are announced to #permissions through
+    ``log_router``.
     """
     group = app_commands.Group(
         name=PERM_GROUP_NAME, description=PERM_GROUP_DESCRIPTION
     )
 
     def announce(line: str) -> None:
-        """Post a level change line to #permissions."""
+        """Post a level or override change line to #permissions."""
         log_router.post(LogStream.PERMISSIONS, LogLevel.INFO, line)
 
     @group.command(
@@ -582,3 +607,95 @@ def build_perm_group(
         )
 
     return group
+
+
+def build_block_commands(
+    *,
+    connection: sqlite3.Connection,
+    registry: CommandRegistry,
+    owner_id: int,
+    log_usage: Callable[[CommandUsage], None],
+    log_router: LogRouter,
+) -> list[app_commands.Command]:
+    """Return the top-level /block and /unblock commands.
+
+    ``log_usage`` receives each command call's usage record. Block
+    changes are announced to #permissions through ``log_router``.
+    With no scope chosen, the block applies everywhere.
+    """
+
+    def announce(line: str) -> None:
+        """Post a block change line to #permissions."""
+        log_router.post(LogStream.PERMISSIONS, LogLevel.INFO, line)
+
+    @app_commands.command(name=BLOCK_NAME, description=BLOCK_DESCRIPTION)
+    @app_commands.describe(
+        user=PERM_USER_DESCRIPTION,
+        kind=BLOCK_KIND_DESCRIPTION,
+        scope=PERM_SCOPE_DESCRIPTION,
+    )
+    @app_commands.choices(kind=BLOCK_KIND_CHOICES, scope=SCOPE_CHOICES)
+    async def block_command(
+        interaction: discord.Interaction,
+        user: discord.User,
+        kind: app_commands.Choice[str],
+        scope: app_commands.Choice[str] | None = None,
+    ) -> None:
+        """Run /block."""
+        context = context_from_interaction(interaction)
+        scope_value = _scope_value(scope)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=BLOCK_NAME,
+            function=lambda: block_user(
+                connection,
+                target_id=user.id,
+                target_is_bot=user.bot,
+                kind=kind.value,
+                scope=scope_value,
+                owner_id=owner_id,
+                actor_id=context.user_id,
+                guild_id=context.guild_id,
+                now=context.now,
+                announce=announce,
+            ),
+            log_usage=log_usage,
+        )
+
+    @app_commands.command(name=UNBLOCK_NAME, description=UNBLOCK_DESCRIPTION)
+    @app_commands.describe(
+        user=PERM_USER_DESCRIPTION, scope=PERM_SCOPE_DESCRIPTION
+    )
+    @app_commands.choices(scope=SCOPE_CHOICES)
+    async def unblock_command(
+        interaction: discord.Interaction,
+        user: discord.User,
+        scope: app_commands.Choice[str] | None = None,
+    ) -> None:
+        """Run /unblock."""
+        context = context_from_interaction(interaction)
+        scope_value = _scope_value(scope)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=UNBLOCK_NAME,
+            function=lambda: unblock_user(
+                connection,
+                target_id=user.id,
+                target_is_bot=user.bot,
+                scope=scope_value,
+                owner_id=owner_id,
+                actor_id=context.user_id,
+                guild_id=context.guild_id,
+                now=context.now,
+                announce=announce,
+            ),
+            log_usage=log_usage,
+        )
+
+    return [block_command, unblock_command]
