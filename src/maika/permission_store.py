@@ -83,6 +83,12 @@ SELECT_USER_OVERRIDES_SQL = (
     "WHERE user_id = :user_id AND guild_id = :guild_id"
 )
 
+SELECT_OTHER_SCOPE_OVERRIDES_SQL = (
+    "SELECT key, effect, guild_id FROM permission_overrides "
+    "WHERE user_id = :user_id AND guild_id != :guild_id "
+    "ORDER BY guild_id, key"
+)
+
 SELECT_KEY_OVERRIDES_SQL = (
     "SELECT guild_id, effect FROM permission_overrides "
     "WHERE user_id = :user_id AND key = :key "
@@ -480,6 +486,48 @@ def find_covered_overrides(
         if _is_covered(shape, pattern, row["key"])
     ]
     return tuple(sorted(covered, key=lambda cleared: cleared.key))
+
+
+@dataclass(frozen=True)
+class ScopedCoveredOverride:
+    """A row beneath a wildcard, in a scope other than the command's.
+
+    ``guild_id`` is 0 for the global row or a server ID.
+    """
+
+    guild_id: int
+    key: str
+    effect: str
+
+
+def find_covered_in_other_scopes(
+    connection: sqlite3.Connection,
+    *,
+    user_id: int,
+    pattern: str,
+    guild_id: int,
+) -> tuple[ScopedCoveredOverride, ...]:
+    """Return rows ``pattern`` would cover in scopes but ``guild_id``.
+
+    The covering rule is that of ``find_covered_overrides``, applied
+    to the person's rows in every other scope. Those rows are not
+    cleared by a command in ``guild_id`` and stay in force. An exact
+    key covers nothing. The global rows come first, then servers by
+    ID, each sorted by key. Nothing is written. Raise
+    PermissionChangeError for a malformed pattern.
+    """
+    shape = _pattern_shape(pattern)
+    if shape is _PatternShape.EXACT:
+        return ()
+    rows = connection.execute(
+        SELECT_OTHER_SCOPE_OVERRIDES_SQL,
+        {"user_id": user_id, "guild_id": guild_id},
+    ).fetchall()
+    return tuple(
+        ScopedCoveredOverride(row["guild_id"], row["key"], row["effect"])
+        for row in rows
+        if _is_covered(shape, pattern, row["key"])
+    )
 
 
 @dataclass(frozen=True)

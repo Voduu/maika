@@ -101,6 +101,12 @@ def run(
     )
 
 
+def confirm(result):
+    """Press Confirm on an ask result and return the action's result."""
+    assert result.confirmation is not None
+    return result.confirmation.on_confirm()
+
+
 def override_rows(connection):
     rows = connection.execute(
         "SELECT user_id, key, effect, guild_id, set_by, set_at "
@@ -281,7 +287,9 @@ def test_wildcard_clears_one_row(migrated_db):
     run(migrated_db, "deny", "feed.remove")
     announce = Announcer()
 
-    result = run(migrated_db, "grant", "feed.*", announce=announce, now=LATER)
+    result = confirm(
+        run(migrated_db, "grant", "feed.*", announce=announce, now=LATER)
+    )
 
     assert result.message == (
         f"<@{ALEX}>: `feed.*` is now allowed (everywhere). Cleared 1 "
@@ -301,7 +309,7 @@ def test_wildcard_clears_several_rows(migrated_db):
     run(migrated_db, "deny", "feed.remove")
     run(migrated_db, "deny", "cat.*")
 
-    result = run(migrated_db, "deny", "*", now=LATER)
+    result = confirm(run(migrated_db, "deny", "*", now=LATER))
 
     assert result.message == (
         f"<@{ALEX}>: `*` is now denied (everywhere). Cleared 3 exceptions: "
@@ -328,7 +336,7 @@ def test_same_effect_wildcard_still_clears(migrated_db):
     run(migrated_db, "deny", "feed.remove", now=LATER)
     # A row beneath the wildcard was added after it, so granting the
     # wildcard again clears that row.
-    result = run(migrated_db, "grant", "feed.*", now=LATER)
+    result = confirm(run(migrated_db, "grant", "feed.*", now=LATER))
 
     assert result.message == (
         f"<@{ALEX}>: `feed.*` is now allowed (everywhere). Cleared 1 "
@@ -342,7 +350,9 @@ def test_reset_wildcard_lists_cleared_rows(migrated_db):
     run(migrated_db, "deny", "cat.view")
     announce = Announcer()
 
-    result = run(migrated_db, "reset", "*", announce=announce, now=LATER)
+    result = confirm(
+        run(migrated_db, "reset", "*", announce=announce, now=LATER)
+    )
 
     assert result.message == (
         f"<@{ALEX}>: `*` exception removed (everywhere). Cleared 2 "
@@ -467,7 +477,7 @@ def test_note_follows_cleared_rows(migrated_db):
     run(migrated_db, "deny", "feed.remove")
     run(migrated_db, "deny", "feed.*", scope=SERVER)
 
-    result = run(migrated_db, "grant", "feed.*")
+    result = confirm(run(migrated_db, "grant", "feed.*"))
 
     assert result.message == (
         f"<@{ALEX}>: `feed.*` is now allowed (everywhere). Cleared 1 "
@@ -718,7 +728,7 @@ def test_rows_and_audit_written_together(migrated_db, monkeypatch):
     )
 
     with pytest.raises(RuntimeError, match="audit write failed"):
-        run(migrated_db, "grant", "feed.*", now=LATER)
+        confirm(run(migrated_db, "grant", "feed.*", now=LATER))
 
     assert override_rows(migrated_db) == rows_before
     assert audit_rows(migrated_db) == audit_before

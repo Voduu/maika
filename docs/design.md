@@ -47,7 +47,7 @@ A refusal in conversation is silence. A refused slash command returns an ephemer
 
 **Commands (owner-only):** `/perm level` (set a person's level, 2.3), `/perm grant` (set allow), `/perm deny` (set deny), `/perm reset` (remove the override, returning the key to the person's level), `/perm show` (the expanded result for every key and what decided it), `/perm history` (every change made to one person), `/perm keys` (lists every key with autocomplete), `/block` and `/unblock` (see Blocks below). `/perm grant`, `/perm deny`, and `/perm reset` take a scope option: everywhere (the default) or this server. `/block` and `/unblock` take the same scope option.
 
-**Wildcards.** `feed.*` covers every key beginning with `feed.`, including keys added later. The latest command overwrites earlier settings for every key it covers: a wildcard grant, deny, or reset removes the rows beneath it (for `*`, the exact-key rows and the `area.*` rows), and the bot's reply lists what it cleared ("Cleared 1 exception: `feed.notify` deny"). For "everything except one", grant the wildcard first, then deny the single key. The rule is broad command first, exceptions after. Owner-only fixed keys and protected keys ignore wildcards, including `*`. Every change goes to the audit log. A reply also notes the person's rows for the same key in other scopes (for example "Note: `*` is still denied (this server)"), so a row left in another scope is visible.
+**Wildcards.** `feed.*` covers every key beginning with `feed.`, including keys added later. The latest command overwrites earlier settings for every key it covers: a wildcard grant, deny, or reset removes the rows beneath it (for `*`, the exact-key rows and the `area.*` rows), and the bot's reply lists what it cleared ("Cleared 1 exception: `feed.notify` deny"). A long list shows the first 10 rows and "and N more", and the audit log keeps every row. For "everything except one", grant the wildcard first, then deny the single key. The rule is broad command first, exceptions after. Owner-only fixed keys and protected keys ignore wildcards, including `*`. Every change goes to the audit log. A reply also notes the person's rows for the same key in other scopes (for example "Note: `*` is still denied (this server)"), and a wildcard reply notes the rows beneath it that remain in other scopes (for example "Note: 1 exception beneath it is still in effect in another scope: `memory.add` deny (this server)"), so a row left in another scope is visible.
 
 **Initial keys (draft):**
 
@@ -1104,8 +1104,8 @@ Ideas not yet scheduled:
   - Weight lists (comma-separated `value:percent` text, section 10 introduction) have no setting type yet; add one or keep them as TEXT with their own checks when the first such setting arrives.
   - When `/config set` stores a value equal to the default, the reply should say so and mention `/config reset`, because an override equal to the default does not follow later default changes.
 - Command layer follow-ups (permissions):
-  - Confirm before a wildcard `/perm` command that would clear existing rows, listing the rows and offering Confirm and Cancel.
   - `/perm undo`: restore the rows a wildcard command cleared, using the audit log entries it wrote.
+  - A confirmed /perm write records the time the command was typed. Pass the press time to on_confirm if audit ordering ever matters.
   - Show stored text in Discord with the characters escaped or in code formatting, so an asterisk is not read as Markdown italics. Keys and patterns in `/perm show` are escaped; what remains is audit notes and the `/perm history` output.
   - `/perm show` lists every key. Once the key list grows (about 60 keys), hide the owner-only keys by default and show them with an `all:true` option.
 - `run_command` is synchronous. Add an async variant that shares the permission and logging code when the first command needs to `await` (for example a network check).
@@ -1197,7 +1197,7 @@ Friend A can use only `cat.view` among the overridable keys. Friend B can use ev
 - The `UNIQUE` rule means a second grant or deny on the same key overwrites the first row.
 - A wildcard command runs in one transaction: it deletes the person's exact rows that the wildcard covers, writes the wildcard row, writes one audit row per change, and returns the list of cleared rows for the bot's reply.
 - A command on `*` also removes the person's `area.*` rows in the same server scope, because those rows sit beneath `*` in the check order.
-- A wildcard command that would clear existing rows can show them first and ask for confirmation (the command layer reads them with `find_covered_overrides`). For a reversible way to shut a person off, use `/block`, which leaves override rows untouched.
+- When a wildcard command would clear existing rows, `/perm grant`, `/perm deny` and `/perm reset` show them first and ask for confirmation (the command layer reads them with `find_covered_overrides`). For a reversible way to shut a person off, use `/block`, which leaves override rows untouched.
 - Broad command first, exceptions after: `/perm deny feed.*` then `/perm grant feed.remove` leaves `feed.*` deny and `feed.remove` allow. The reverse order leaves only `feed.*` deny.
 - There is no foreign key to `users`, because a level-0 person has override rows and no `users` row.
 - `/perm show @x` displays the expanded result for every key, with the row or level that decided it ("Decided by" column), computed with the same lookup the real check uses.

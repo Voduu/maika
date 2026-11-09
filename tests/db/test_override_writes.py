@@ -6,7 +6,9 @@ from maika.permission_store import (
     ClearedOverride,
     OverrideChange,
     PermissionChangeError,
+    ScopedCoveredOverride,
     ScopedOverride,
+    find_covered_in_other_scopes,
     find_covered_overrides,
     find_key_overrides,
     reset_override,
@@ -313,6 +315,57 @@ def test_find_covered_ignores_other_users_and_guilds(migrated_db, pattern):
     assert covered(migrated_db, pattern, guild_id=GUILD) == (
         ClearedOverride("feed.list", ALLOW),
     )
+
+
+def elsewhere(connection, pattern, guild_id=0):
+    return find_covered_in_other_scopes(
+        connection, user_id=ALEX, pattern=pattern, guild_id=guild_id
+    )
+
+
+def test_covered_elsewhere_skips_the_given_scope(migrated_db):
+    insert_row(migrated_db, "feed.list", ALLOW)
+    insert_row(migrated_db, "feed.remove", DENY, guild_id=OTHER_GUILD)
+    insert_row(migrated_db, "feed.notify", ALLOW, guild_id=GUILD)
+    insert_row(migrated_db, "feed.list", DENY, guild_id=GUILD)
+
+    assert elsewhere(migrated_db, "feed.*") == (
+        ScopedCoveredOverride(GUILD, "feed.list", DENY),
+        ScopedCoveredOverride(GUILD, "feed.notify", ALLOW),
+        ScopedCoveredOverride(OTHER_GUILD, "feed.remove", DENY),
+    )
+    assert elsewhere(migrated_db, "feed.*", guild_id=GUILD) == (
+        ScopedCoveredOverride(0, "feed.list", ALLOW),
+        ScopedCoveredOverride(OTHER_GUILD, "feed.remove", DENY),
+    )
+
+
+def test_covered_elsewhere_uses_the_covering_rule(migrated_db):
+    insert_row(migrated_db, "*", DENY, guild_id=GUILD)
+    insert_row(migrated_db, "feed.*", DENY, guild_id=GUILD)
+    insert_row(migrated_db, "cat.view", ALLOW, guild_id=GUILD)
+    insert_row(migrated_db, "cat_photos.add", ALLOW, guild_id=GUILD)
+    insert_row(migrated_db, "feed.list", ALLOW, user_id=SAM, guild_id=GUILD)
+
+    assert elsewhere(migrated_db, "*") == (
+        ScopedCoveredOverride(GUILD, "cat.view", ALLOW),
+        ScopedCoveredOverride(GUILD, "cat_photos.add", ALLOW),
+        ScopedCoveredOverride(GUILD, "feed.*", DENY),
+    )
+    assert elsewhere(migrated_db, "cat.*") == (
+        ScopedCoveredOverride(GUILD, "cat.view", ALLOW),
+    )
+    assert elsewhere(migrated_db, "feed.*") == ()
+
+
+def test_covered_elsewhere_exact_key_is_empty(migrated_db):
+    insert_row(migrated_db, "feed.list", ALLOW, guild_id=GUILD)
+    assert elsewhere(migrated_db, "feed.list") == ()
+
+
+def test_covered_elsewhere_refuses_malformed_pattern(migrated_db):
+    with pytest.raises(PermissionChangeError):
+        elsewhere(migrated_db, "Feed List")
 
 
 def test_find_covered_writes_nothing(migrated_db):
