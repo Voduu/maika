@@ -168,7 +168,7 @@ def test_time_value_uses_stored_form(migrated_db):
 
     assert result.message == (
         "`backups.time = 03:30` (changed)\n"
-        "Daily database backup time.\n"
+        "Daily database backup time (local time on the bot's machine).\n"
         "Type: time. Default: 04:00."
     )
 

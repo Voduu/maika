@@ -1,8 +1,9 @@
 """The Discord client: commands, log router, startup and shutdown.
 
 The slash commands are added to the command tree and synced once in
-``setup_hook``, which also starts the log router and attaches the
-handler that forwards warnings and errors to ``#errors``. The
+``setup_hook``, which also starts the log router, attaches the
+handler that forwards warnings and errors to ``#errors``, and starts
+the daily database backup task. The
 startup, shutdown and command-usage lines go to ``#bot-log`` through
 the router (design section 3.18). Posting a log line is best effort:
 a missing channel or a failed post is logged to the console and never
@@ -10,6 +11,7 @@ stops the bot.
 """
 
 import asyncio
+import datetime
 import logging
 import sqlite3
 
@@ -17,7 +19,7 @@ import discord
 from discord import app_commands
 
 import maika
-from maika import usage_log
+from maika import daily_backup, usage_log
 from maika.commands import CommandRegistry
 from maika.config import Config
 from maika.discord_adapter import handle_tree_error
@@ -88,6 +90,8 @@ class MaikaClient(discord.Client):
         # run() from being garbage collected while it waits.
         self._log_router_task: asyncio.Task[None] | None = None
         self._log_handler: RouterLogHandler | None = None
+        # Set in setup_hook and cancelled in close().
+        self._backup_task: asyncio.Task[None] | None = None
         # Set by the first ready event. It keeps the startup line to
         # one post per run, and close() reads it to skip the shutdown
         # line when the bot never got that far.
@@ -95,15 +99,16 @@ class MaikaClient(discord.Client):
         self._shutdown_line_sent = False
 
     async def setup_hook(self) -> None:
-        """Start the log router, then add and sync the slash commands.
+        """Start the background tasks, then add and sync the commands.
 
         The router's run() starts as a background task, and a
         RouterLogHandler on the ``maika`` logger forwards warnings and
-        errors to #errors. A failed sync is logged and the bot keeps
-        running; Discord keeps the commands from the last successful
-        sync.
+        errors to #errors. The daily backup task starts next. A failed
+        sync is logged and the bot keeps running; Discord keeps the
+        commands from the last successful sync.
         """
         self._start_log_router()
+        self._start_backup_task()
         self.tree.add_command(
             build_config_group(
                 connection=self.connection,
@@ -162,7 +167,7 @@ class MaikaClient(discord.Client):
         self.log_router.post(LogStream.BOT_LOG, LogLevel.INFO, line)
 
     async def close(self) -> None:
-        """Post the shutdown line, drain the log router, then close.
+        """Stop the backup task, post the shutdown line, then close.
 
         ``close`` can be called more than once (for example by
         ``Client.run`` after an earlier call), so the line is posted
@@ -171,6 +176,7 @@ class MaikaClient(discord.Client):
         token). The router gets its drain time before the Discord
         connection closes, so queued lines can still be sent.
         """
+        await self._stop_backup_task()
         if (
             self._reached_first_ready
             and not self._shutdown_line_sent
@@ -192,6 +198,41 @@ class MaikaClient(discord.Client):
                 self.log_router, secrets=(self.config.discord_token,)
             )
             logging.getLogger(LOGGER_NAME).addHandler(self._log_handler)
+
+    def _start_backup_task(self) -> None:
+        """Start the daily backup loop, if it is not running."""
+        if self._backup_task is None:
+            self._backup_task = asyncio.create_task(
+                daily_backup.run_backup_loop(self._run_backup_cycle)
+            )
+
+    async def _stop_backup_task(self) -> None:
+        """Cancel the daily backup loop and wait for it to end.
+
+        A copy already running in its worker thread cannot be
+        cancelled. It finishes on its own, and the event loop waits
+        for it before the program exits.
+        """
+        task = self._backup_task
+        if task is None:
+            return
+        self._backup_task = None
+        task.cancel()
+        await asyncio.wait({task})
+
+    async def _run_backup_cycle(
+        self,
+    ) -> daily_backup.DailyBackupResult | None:
+        """Run one daily backup check with the local time now.
+
+        Returns the cycle's result, so the loop can choose its wait.
+        """
+        return await daily_backup.run_backup_cycle(
+            self.connection,
+            self.config.database_path,
+            self.log_router,
+            now=datetime.datetime.now(),
+        )
 
     def _stop_log_handler(self) -> None:
         """Detach the #errors handler, if it is attached."""

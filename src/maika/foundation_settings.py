@@ -197,7 +197,9 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         server_scope=False,
         value_type=ValueType.TIME,
         default=datetime.time(4, 0),
-        description="Daily database backup time.",
+        description=(
+            "Daily database backup time (local time on the bot's machine)."
+        ),
     ),
     SettingDefinition(
         key="backups.days_kept",

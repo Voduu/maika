@@ -850,6 +850,7 @@ All model calls go through one function, `generate(request)`. Layers 1 and 2 nev
 ### Database backups
 
 - A scheduled task backs up the database once a day, at 4 a.m. by default, using SQLite's backup function. Copying the live database file can miss recent changes (WAL mode keeps them in a separate file) or produce an unreadable copy.
+- The backup time is read as local time on the machine running the bot (the container's TZ setting). The task checks once a minute. After a failed backup the task waits one hour before trying again, so a persistent failure posts one error an hour. A bot that was down at backup time makes the missing backup when it starts. A copy that fails its integrity check is deleted and reported to #errors.
 - Files: `backups/daily/maika-YYYY-MM-DD.db`. Copies older than 30 days are deleted. The backup time and the number of days kept are settings.
 - Each new backup gets `PRAGMA integrity_check`. Success posts to `#bot-log` and failure to `#errors`.
 - Before applying a migration (9.9) the bot makes a backup in a separate folder, using SQLite's backup function (the same method as the daily backup, never a plain file copy). The last 10 are kept.
@@ -2386,7 +2387,7 @@ Log channels and backups (3.18, section 5).
 | `log.level.persona_log` | text | info | debug, info, warning, error | G | Advanced | Detail level for #persona-log. |
 | `log.level.events` | text | info | debug, info, warning, error | G | Advanced | Detail level for #events. |
 | `log.level.memory_review` | text | info | debug, info, warning, error | G | Advanced | Detail level for #memory-review. |
-| `backups.time` | time | 04:00 | - | G | Basic | Daily database backup time. |
+| `backups.time` | time | 04:00 | - | G | Basic | Daily database backup time (local time on the bot's machine). |
 | `backups.days_kept` | int | 30 | 1 to 365 | G | Basic | Days of daily backups kept. |
 | `backups.migration_copies` | int | 10 | 1 to 50 | G | Advanced | Pre-migration copies kept. |
 | `backups.offsite_copies_kept` | int | 4 | 1 to 52 | G | Advanced | Weekly offsite copies kept. |
