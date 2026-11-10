@@ -3,7 +3,7 @@
 The slash commands are added to the command tree and synced once in
 ``setup_hook``, which also starts the log router, attaches the
 handler that forwards warnings and errors to ``#errors``, and starts
-the daily database backup task. The
+the daily database backup task and the weekly offsite copy task. The
 startup, shutdown and command-usage lines go to ``#bot-log`` through
 the router (design section 3.18). Posting a log line is best effort:
 a missing channel or a failed post is logged to the console and never
@@ -19,7 +19,7 @@ import discord
 from discord import app_commands
 
 import maika
-from maika import daily_backup, usage_log
+from maika import daily_backup, offsite_copy, usage_log
 from maika.commands import CommandRegistry
 from maika.config import Config
 from maika.discord_adapter import handle_tree_error
@@ -92,6 +92,7 @@ class MaikaClient(discord.Client):
         self._log_handler: RouterLogHandler | None = None
         # Set in setup_hook and cancelled in close().
         self._backup_task: asyncio.Task[None] | None = None
+        self._offsite_task: asyncio.Task[None] | None = None
         # Set by the first ready event. It keeps the startup line to
         # one post per run, and close() reads it to skip the shutdown
         # line when the bot never got that far.
@@ -103,12 +104,14 @@ class MaikaClient(discord.Client):
 
         The router's run() starts as a background task, and a
         RouterLogHandler on the ``maika`` logger forwards warnings and
-        errors to #errors. The daily backup task starts next. A failed
-        sync is logged and the bot keeps running; Discord keeps the
-        commands from the last successful sync.
+        errors to #errors. The daily backup task and the weekly
+        offsite copy task start next. A failed sync is logged and the
+        bot keeps running; Discord keeps the commands from the last
+        successful sync.
         """
         self._start_log_router()
         self._start_backup_task()
+        self._start_offsite_task()
         self.tree.add_command(
             build_config_group(
                 connection=self.connection,
@@ -167,7 +170,7 @@ class MaikaClient(discord.Client):
         self.log_router.post(LogStream.BOT_LOG, LogLevel.INFO, line)
 
     async def close(self) -> None:
-        """Stop the backup task, post the shutdown line, then close.
+        """Stop the backup tasks, post the shutdown line, then close.
 
         ``close`` can be called more than once (for example by
         ``Client.run`` after an earlier call), so the line is posted
@@ -177,6 +180,7 @@ class MaikaClient(discord.Client):
         connection closes, so queued lines can still be sent.
         """
         await self._stop_backup_task()
+        await self._stop_offsite_task()
         if (
             self._reached_first_ready
             and not self._shutdown_line_sent
@@ -228,6 +232,39 @@ class MaikaClient(discord.Client):
         Returns the cycle's result, so the loop can choose its wait.
         """
         return await daily_backup.run_backup_cycle(
+            self.connection,
+            self.config.database_path,
+            self.log_router,
+            now=datetime.datetime.now(),
+        )
+
+    def _start_offsite_task(self) -> None:
+        """Start the weekly offsite copy loop, if it is not running."""
+        if self._offsite_task is None:
+            self._offsite_task = asyncio.create_task(
+                offsite_copy.run_offsite_loop(self._run_offsite_cycle)
+            )
+
+    async def _stop_offsite_task(self) -> None:
+        """Cancel the offsite copy loop and wait for it to end.
+
+        A running rclone process is killed when the loop is cancelled.
+        """
+        task = self._offsite_task
+        if task is None:
+            return
+        self._offsite_task = None
+        task.cancel()
+        await asyncio.wait({task})
+
+    async def _run_offsite_cycle(
+        self,
+    ) -> offsite_copy.OffsiteCopyResult | None:
+        """Run one offsite copy check with the local time now.
+
+        Returns the cycle's result, so the loop can choose its wait.
+        """
+        return await offsite_copy.run_offsite_cycle(
             self.connection,
             self.config.database_path,
             self.log_router,

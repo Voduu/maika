@@ -856,7 +856,7 @@ All model calls go through one function, `generate(request)`. Layers 1 and 2 nev
 - Before applying a migration (9.9) the bot makes a backup in a separate folder, using SQLite's backup function (the same method as the daily backup, never a plain file copy). The last 10 are kept.
 - The backups folder sits inside `appdata`, so Unraid's backup includes it.
 - Restore: stop the bot, copy the chosen backup over the database file, start the bot.
-- A weekly copy of the newest database backup goes to another machine (build step 1), so a failure of the server does not take the backups with it. The last `backups.offsite_copies_kept` weekly copies are kept (4 to start).
+- A weekly copy of the newest daily backup goes to a remote through rclone (Google Drive to start), so a failure of the server does not take the backups with it. The copy runs on `backups.offsite_day` after `backups.time` and only once that day's daily backup exists, retries on later days until it succeeds, and then deletes the oldest remote copies permanently (not into the Drive trash) beyond `backups.offsite_copies_kept` (4 to start). It is off until `backups.offsite_enabled` is true. The rclone config file with the Google token sits in appdata and its location comes from RCLONE_CONFIG in .env.
 - **Deleted memories in backups.** `/forget` removes a memory from the live database at once. Copies of it age out of the daily backups after 30 days and out of the offsite copies after the offsite retention (4 weeks to start). Friends are told this in the `/help` memory note (2.6).
 - Photo files live on the array share and need their own backup arrangement. A copy of the photo files outside the server can be added later (Parking Lot).
 
@@ -1086,6 +1086,7 @@ Ideas not yet scheduled:
 - A reaction on a `#decisions` line that marks the decision wrong and saves it as a labeled test case.
 - More mood names (relaxed: positive happiness with low energy; annoyed: mild unhappiness), and intensity (mild or strong flavor from the distance to the baseline) as a way to add variety without multiplying canned line sets.
 - A copy of the photo files outside the server (another machine or a cloud sync of the photo folder).
+- Encrypt the offsite copies with rclone crypt.
 - Near-duplicate photo detection (perceptual hashing) for resized or re-saved copies of a stored photo.
 - Prefix commands (`!`) through discord.py hybrid commands, which serve slash and prefix from one definition. Left out because they bypass the Integrations channel restrictions, cannot reply ephemerally, and add a third front end to the registry and tests.
 - `/say` to a channel in another server (channel autocomplete across servers). Not needed while `/say` runs in the channel it posts to.
@@ -1335,7 +1336,7 @@ CREATE TABLE bot_state (
 );
 ```
 
-- Keys so far: `heartbeat` (updated each minute; the startup comparison measures downtime), `first_boot`, `last_seen_old_account`. The mood state is `mood.energy`, `mood.happiness`, `mood.baseline_energy`, `mood.baseline_happiness`, `mood.updated_at`, and `mood.reroll_at`, and the post-wake sleepy counter is `sleep.groggy_remaining` and `sleep.groggy_until` (9.14). The sleep state keys are `sleep.state` (`awake` or `asleep`), `sleep.wake_at` (planned wake time while asleep), `sleep.override_until` (set by `/wake`; she stays awake until the next scheduled sleep window), `sleep.early_woken` (1 after an early wake, cleared at the planned wake time), and `sleep.catchup_from` (the time after which the wake-time catch-up reads messages, 3.12). A new key needs no migration.
+- Keys so far: `heartbeat` (updated each minute; the startup comparison measures downtime), `first_boot`, `last_seen_old_account`. The mood state is `mood.energy`, `mood.happiness`, `mood.baseline_energy`, `mood.baseline_happiness`, `mood.updated_at`, and `mood.reroll_at`, and the post-wake sleepy counter is `sleep.groggy_remaining` and `sleep.groggy_until` (9.14). The sleep state keys are `sleep.state` (`awake` or `asleep`), `sleep.wake_at` (planned wake time while asleep), `sleep.override_until` (set by `/wake`; she stays awake until the next scheduled sleep window), `sleep.early_woken` (1 after an early wake, cleared at the planned wake time), and `sleep.catchup_from` (the time after which the wake-time catch-up reads messages, 3.12). `backups.offsite_last_success` is the date of the last successful offsite copy, as an ISO date (section 5). A new key needs no migration.
 - To clear a key, delete its row with `delete_state`. An empty value is never used to mean "cleared"; a missing row means the key is not set (for example `sleep.early_woken` after the planned wake time).
 - Kept apart from `settings` because settings are values the owner tunes, and each change creates an audit entry and a log post. A heartbeat every minute would add 1,440 audit rows per day and put values in `/config list` that nobody should edit.
 
@@ -2365,9 +2366,9 @@ Direct messages (3.1).
 | `dm.chat_enabled` | bool | false | - | G | Basic | Conversation in DMs. |
 | `dm.notice_cooldown_hours` | int | 24 | 1 to 168 | G | Advanced | Hours between her only-chats-in-servers notices. |
 
-### 10.15 logging (20)
+### 10.15 logging and backups (23)
 
-Log channels and backups (3.18, section 5).
+Log channels (3.18) in the `logging` category (16), and database backups (section 5) in the `backups` category (7).
 
 | Key | Type | Default | Range | Scope | Level | Description |
 |---|---|---|---|---|---|---|
@@ -2387,10 +2388,16 @@ Log channels and backups (3.18, section 5).
 | `log.level.persona_log` | text | info | debug, info, warning, error | G | Advanced | Detail level for #persona-log. |
 | `log.level.events` | text | info | debug, info, warning, error | G | Advanced | Detail level for #events. |
 | `log.level.memory_review` | text | info | debug, info, warning, error | G | Advanced | Detail level for #memory-review. |
+
+| Key | Type | Default | Range | Scope | Level | Description |
+|---|---|---|---|---|---|---|
 | `backups.time` | time | 04:00 | - | G | Basic | Daily database backup time (local time on the bot's machine). |
 | `backups.days_kept` | int | 30 | 1 to 365 | G | Basic | Days of daily backups kept. |
 | `backups.migration_copies` | int | 10 | 1 to 50 | G | Advanced | Pre-migration copies kept. |
 | `backups.offsite_copies_kept` | int | 4 | 1 to 52 | G | Advanced | Weekly offsite copies kept. |
+| `backups.offsite_enabled` | bool | false | - | G | Basic | Weekly offsite copy on or off. |
+| `backups.offsite_day` | text | sunday | monday to sunday | G | Basic | Weekday of the weekly offsite copy. |
+| `backups.offsite_remote` | text | gdrive:maika-backups | - | G | Advanced | rclone remote and folder for the offsite copies. |
 
 ### 10.16 Cross-checks
 
