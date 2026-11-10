@@ -112,10 +112,12 @@ def test_overview_with_foundation_settings(migrated_db):
     every = config_list(migrated_db, SETTINGS, None, True)
 
     assert basic.message == (
-        "logging (10)\ncommands (0)\nUse `/config list category:<name>`."
+        "logging (8)\nbackups (4)\ncommands (0)\n"
+        "Use `/config list category:<name>`."
     )
     assert every.message == (
-        "logging (20)\ncommands (1)\nUse `/config list category:<name>`."
+        "logging (16)\nbackups (7)\ncommands (1)\n"
+        "Use `/config list category:<name>`."
     )
 
 
@@ -158,16 +160,25 @@ def test_category_name_ignores_case_and_spaces(migrated_db):
 
 
 def test_foundation_logging_listing(migrated_db):
-    store(migrated_db, "backups.days_kept", "14", registry=SETTINGS)
-
     result = config_list(migrated_db, SETTINGS, "logging", False)
 
     lines = result.message.splitlines()
-    assert len(lines) == 10
+    assert len(lines) == 8
     assert lines[0] == "`log.channel.bot_log = none`"
-    assert "`backups.time = 04:00`" in lines
-    assert "`backups.days_kept = 14` (changed)" in lines
-    assert not any(line.startswith("`log.level.") for line in lines)
+    assert all(line.startswith("`log.channel.") for line in lines)
+
+
+def test_foundation_backups_listing(migrated_db):
+    store(migrated_db, "backups.days_kept", "14", registry=SETTINGS)
+
+    result = config_list(migrated_db, SETTINGS, "backups", False)
+
+    assert result.message.splitlines() == [
+        "`backups.time = 04:00`",
+        "`backups.days_kept = 14` (changed)",
+        "`backups.offsite_enabled = false`",
+        "`backups.offsite_day = sunday`",
+    ]
 
 
 def test_unknown_category(migrated_db):
@@ -439,7 +450,8 @@ def test_list_callback_owner_overview(migrated_db):
     asyncio.run(subcommand(client, "list").callback(interaction))
 
     assert reply(interaction) == (
-        "logging (10)\ncommands (0)\nUse `/config list category:<name>`.",
+        "logging (8)\nbackups (4)\ncommands (0)\n"
+        "Use `/config list category:<name>`.",
         True,
     )
 
@@ -456,7 +468,7 @@ def test_list_callback_owner_category_all(migrated_db):
 
     message, ephemeral = reply(interaction)
     assert ephemeral is True
-    assert len(message.splitlines()) == 20
+    assert len(message.splitlines()) == 16
 
 
 def test_list_callback_non_owner_refused(migrated_db):

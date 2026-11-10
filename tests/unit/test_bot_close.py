@@ -171,6 +171,25 @@ def test_setup_hook_starts_backup_task_and_close_stops_it():
     assert client._backup_task is None
 
 
+def test_setup_hook_starts_offsite_task_and_close_stops_it():
+    client, _ = make_client()
+    client.tree.sync = mock.AsyncMock(return_value=[])
+
+    async def setup_then_close():
+        await client.setup_hook()
+        task = client._offsite_task
+        assert task is not None
+        assert not task.done()
+        client._log_router_task.cancel()
+        await client.close()
+        return task
+
+    task = asyncio.run(setup_then_close())
+
+    assert task.cancelled()
+    assert client._offsite_task is None
+
+
 def test_send_log_line_turns_mentions_off():
     client, _ = make_client()
     channel = mock.AsyncMock()

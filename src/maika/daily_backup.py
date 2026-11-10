@@ -167,7 +167,7 @@ def daily_backup_files(backup_dir: Path) -> list[Path]:
     return sorted(
         path
         for path in backup_dir.iterdir()
-        if path.is_file() and _date_in_name(path.name) is not None
+        if path.is_file() and backup_name_date(path.name) is not None
     )
 
 
@@ -189,7 +189,7 @@ def prune_daily_backups(
     for path in daily_backup_files(backup_dir):
         if path == keep:
             continue
-        file_date = _date_in_name(path.name)
+        file_date = backup_name_date(path.name)
         if file_date is not None and file_date < cutoff:
             path.unlink()
             deleted.append(path)
@@ -308,8 +308,11 @@ async def run_backup_loop(
             delay = interval_seconds
 
 
-def _date_in_name(name: str) -> datetime.date | None:
-    """Return the date in a daily backup name, or None if not one."""
+def backup_name_date(name: str) -> datetime.date | None:
+    """Return the date in a daily backup name, or None if not one.
+
+    The offsite copy uses this for the remote file names too.
+    """
     match = DAILY_BACKUP_PATTERN.match(name)
     if match is None:
         return None

@@ -3,6 +3,7 @@ import datetime
 import pytest
 
 from maika.foundation_settings import (
+    BACKUPS_CATEGORY,
     COMMANDS_CATEGORY,
     CONFIRM_TIMEOUT_KEY,
     FOUNDATION_SETTINGS,
@@ -653,12 +654,15 @@ FOUNDATION_KEYS = {
     "backups.days_kept",
     "backups.migration_copies",
     "backups.offsite_copies_kept",
+    "backups.offsite_enabled",
+    "backups.offsite_day",
+    "backups.offsite_remote",
     "commands.confirm_timeout_seconds",
 }
 
 
-def test_foundation_has_exactly_21_settings():
-    assert len(FOUNDATION_SETTINGS) == 21
+def test_foundation_has_exactly_24_settings():
+    assert len(FOUNDATION_SETTINGS) == 24
 
 
 def test_foundation_keys_match_design():
@@ -674,9 +678,11 @@ def test_foundation_defaults_are_valid():
 
 def test_foundation_categories():
     assert LOGGING_CATEGORY == "logging"
+    assert BACKUPS_CATEGORY == "backups"
     assert COMMANDS_CATEGORY == "commands"
     assert {d.category for d in FOUNDATION_SETTINGS} == {
         "logging",
+        "backups",
         "commands",
     }
 
@@ -688,10 +694,62 @@ def test_foundation_all_global():
 def test_foundation_registry():
     registry = build_foundation_registry()
     assert set(registry.keys()) == FOUNDATION_KEYS
-    assert len(registry.definitions_in_category("logging")) == 20
+    assert len(registry.definitions_in_category("logging")) == 16
+    assert all(
+        d.key.startswith("log.")
+        for d in registry.definitions_in_category("logging")
+    )
+    assert [d.key for d in registry.definitions_in_category("backups")] == [
+        "backups.time",
+        "backups.days_kept",
+        "backups.migration_copies",
+        "backups.offsite_copies_kept",
+        "backups.offsite_enabled",
+        "backups.offsite_day",
+        "backups.offsite_remote",
+    ]
     assert [d.key for d in registry.definitions_in_category("commands")] == [
         "commands.confirm_timeout_seconds"
     ]
+
+
+def test_every_backups_setting_is_in_backups_category():
+    backups = [d for d in FOUNDATION_SETTINGS if d.key.startswith("backups.")]
+    assert len(backups) == 7
+    assert all(d.category == BACKUPS_CATEGORY for d in backups)
+
+
+def test_offsite_settings_definitions():
+    registry = build_foundation_registry()
+
+    enabled = registry.get("backups.offsite_enabled")
+    assert enabled.value_type is ValueType.BOOL
+    assert enabled.default is False
+    assert enabled.level is SettingLevel.BASIC
+    assert enabled.description == "Weekly offsite copy on or off."
+
+    day = registry.get("backups.offsite_day")
+    assert day.value_type is ValueType.TEXT
+    assert day.default == "sunday"
+    assert day.choices == (
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    )
+    assert day.level is SettingLevel.BASIC
+    assert day.description == "Weekday of the weekly offsite copy."
+
+    remote = registry.get("backups.offsite_remote")
+    assert remote.value_type is ValueType.TEXT
+    assert remote.default == "gdrive:maika-backups"
+    assert remote.level is SettingLevel.ADVANCED
+    assert remote.description == (
+        "rclone remote and folder for the offsite copies."
+    )
 
 
 def test_confirm_timeout_definition():
