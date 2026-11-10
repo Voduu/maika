@@ -68,7 +68,14 @@ def config_error(monkeypatch):
 
 
 @pytest.fixture
-def client_class(monkeypatch):
+def run_client(monkeypatch):
+    fake = mock.AsyncMock()
+    monkeypatch.setattr(entry, "run_client", fake)
+    return fake
+
+
+@pytest.fixture
+def client_class(monkeypatch, run_client):
     fake = mock.Mock()
     monkeypatch.setattr(entry, "MaikaClient", fake)
     return fake
@@ -231,24 +238,24 @@ def assert_closed(connection):
 
 
 def test_database_open_while_client_runs_then_closed(
-    opened, valid_config, client_class
+    opened, valid_config, client_class, run_client
 ):
     def check_open(*args, **kwargs):
         assert opened[0].execute("SELECT 1").fetchone()[0] == 1
 
-    client_class.return_value.run.side_effect = check_open
+    run_client.side_effect = check_open
 
     assert entry.main() == 0
     assert len(opened) == 1
-    client_class.return_value.run.assert_called_once()
+    run_client.assert_awaited_once_with(client_class.return_value, TOKEN)
     assert client_class.call_args.kwargs["connection"] is opened[0]
     assert_closed(opened[0])
 
 
 def test_database_closed_when_client_raises(
-    opened, valid_config, client_class
+    opened, valid_config, client_class, run_client
 ):
-    client_class.return_value.run.side_effect = RuntimeError("crash")
+    run_client.side_effect = RuntimeError("crash")
 
     with pytest.raises(RuntimeError):
         entry.main()
@@ -274,12 +281,12 @@ def test_database_closed_when_migration_fails(
 
 @pytest.fixture
 def login_failure(monkeypatch, valid_config):
-    def raise_login_failure(self, token, **kwargs):
+    async def raise_login_failure(self, token, **kwargs):
         # The token is in the message so the test shows it is not
         # passed on to the console.
         raise discord.LoginFailure(f"Improper token: {token}")
 
-    monkeypatch.setattr(MaikaClient, "run", raise_login_failure)
+    monkeypatch.setattr(MaikaClient, "start", raise_login_failure)
 
 
 def test_login_failure_returns_1(login_failure):

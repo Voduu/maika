@@ -843,6 +843,7 @@ All model calls go through one function, `generate(request)`. Layers 1 and 2 nev
 ## 5. Unraid Layout
 
 - Bot container (Python, discord.py) from a short Dockerfile. Code and SQLite database in `appdata` on the cache SSD.
+- The image includes rclone for the offsite copy. The container runs as an arbitrary user ID (for example 99:100 on Unraid) and writes only to the appdata folder mounted at /app/var.
 - Ollama container on the server runs the CPU fallback model (and the 1070 if it gets installed). Other Ollama instances run on the main PC and the second PC and are reached by address (4.5).
 - Photos on an array share, mounted into the bot container. Originals are kept (2.4).
 - Include `appdata` in Unraid's backups (to be verified on the server). It holds permissions, personality, memories, relationships, and mood data. The bot also makes its own database backups (below).
@@ -856,7 +857,7 @@ All model calls go through one function, `generate(request)`. Layers 1 and 2 nev
 - Before applying a migration (9.9) the bot makes a backup in a separate folder, using SQLite's backup function (the same method as the daily backup, never a plain file copy). The last 10 are kept.
 - The backups folder sits inside `appdata`, so Unraid's backup includes it.
 - Restore: stop the bot, copy the chosen backup over the database file, start the bot.
-- A weekly copy of the newest daily backup goes to a remote through rclone (Google Drive to start), so a failure of the server does not take the backups with it. The copy runs on `backups.offsite_day` after `backups.time` and only once that day's daily backup exists, retries on later days until it succeeds, and then deletes the oldest remote copies permanently (not into the Drive trash) beyond `backups.offsite_copies_kept` (4 to start). It is off until `backups.offsite_enabled` is true. The rclone config file with the Google token sits in appdata and its location comes from RCLONE_CONFIG in .env.
+- A weekly copy of the newest daily backup goes to a remote through rclone (Backblaze B2 to start), so a failure of the server does not take the backups with it. The copy runs on `backups.offsite_day` after `backups.time` and only once that day's daily backup exists, retries on later days until it succeeds, and then deletes the oldest remote copies permanently (not into the provider's trash or version history) beyond `backups.offsite_copies_kept` (4 to start). It is off until `backups.offsite_enabled` is true. The rclone config file with the storage keys sits in appdata and its location comes from RCLONE_CONFIG in .env.
 - **Deleted memories in backups.** `/forget` removes a memory from the live database at once. Copies of it age out of the daily backups after 30 days and out of the offsite copies after the offsite retention (4 weeks to start). Friends are told this in the `/help` memory note (2.6).
 - Photo files live on the array share and need their own backup arrangement. A copy of the photo files outside the server can be added later (Parking Lot).
 
@@ -865,6 +866,7 @@ All model calls go through one function, `generate(request)`. Layers 1 and 2 nev
 - Two bot applications: the test bot and the real Maika. Both run in the private server, in separate channels, with separate tokens and separate database files.
 - Settings that differ come from `.env`: `ENVIRONMENT` (test or prod), `LISTEN_CHANNELS`, `LOG_CHANNEL_ID`, `DATABASE_PATH`, and the token. `LISTEN_CHANNELS` and `LOG_CHANNEL_ID` are starting values: they apply when `/config` has no value for `addressing.listen_channels` or the log channels, and a `/config` value overrides them (section 10). A `.env.example` file lists the variables without values.
 - The test bot runs from VS Code during development. Production runs in Docker on Unraid.
+- A stop request (SIGTERM from docker stop, or Ctrl+C) closes the bot cleanly: the background tasks stop, queued log lines are sent for up to 5 seconds, and the database connection closes. The container's TZ setting decides what local time means for backups.time.
 - The real Maika account joins the friend server only at go-live (section 7).
 - Slash commands are limited to chosen channels in Discord's Integrations settings (Server Settings, Integrations, the bot, Command Permissions), set per server by the owner. This is not part of the bot's code.
 
@@ -2397,7 +2399,7 @@ Log channels (3.18) in the `logging` category (16), and database backups (sectio
 | `backups.offsite_copies_kept` | int | 4 | 1 to 52 | G | Advanced | Weekly offsite copies kept. |
 | `backups.offsite_enabled` | bool | false | - | G | Basic | Weekly offsite copy on or off. |
 | `backups.offsite_day` | text | sunday | monday to sunday | G | Basic | Weekday of the weekly offsite copy. |
-| `backups.offsite_remote` | text | gdrive:maika-backups | - | G | Advanced | rclone remote and folder for the offsite copies. |
+| `backups.offsite_remote` | text | b2offsite:maika-backups | - | G | Advanced | rclone remote and folder for the offsite copies. |
 
 ### 10.16 Cross-checks
 
