@@ -276,7 +276,7 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         level=SettingLevel.ADVANCED,
         server_scope=False,
         value_type=ValueType.TEXT,
-        default="gdrive:maika-backups",
+        default="b2offsite:maika-backups",
         description="rclone remote and folder for the offsite copies.",
     ),
     SettingDefinition(

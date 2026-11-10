@@ -1,5 +1,6 @@
 """Entry point: ``python -m maika``."""
 
+import asyncio
 import logging
 import sqlite3
 import sys
@@ -14,6 +15,7 @@ from maika.config import ConfigError, load_config_from_env
 from maika.database import BackupError, JournalModeError, open_database
 from maika.log_names import LOGGER_NAME
 from maika.migrate import MigrationError, apply_migrations
+from maika.shutdown import run_client
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 LOG_LEVEL = logging.INFO
@@ -109,12 +111,13 @@ def main() -> int:
         connection=connection,
         command_registry=build_command_registry(),
     )
-    # log_handler=None stops discord.py from adding its own console
-    # handler, so its records use the format set above. client.run
-    # runs the event loop on this thread, the same thread that opened
-    # the connection.
+    # run_client replaces client.run so SIGTERM (docker stop) and
+    # SIGINT close the bot cleanly. discord.py adds no console handler
+    # of its own this way, so its records use the format set above.
+    # asyncio.run runs the event loop on this thread, the same thread
+    # that opened the connection.
     try:
-        client.run(config.discord_token, log_handler=None)
+        asyncio.run(run_client(client, config.discord_token))
     except discord.LoginFailure:
         # The exception is not logged or printed, so nothing that
         # could hold the token reaches the console.

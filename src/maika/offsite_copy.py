@@ -4,12 +4,12 @@ The rules are in ``docs/design.md`` section 5, "Database backups", and
 the settings in section 10.15. Once a minute the task reads the
 settings. When ``backups.offsite_enabled`` is true and a copy is due,
 the newest daily backup is uploaded with ``rclone copyto`` to the
-remote in ``backups.offsite_remote`` (Google Drive to start), and the
+remote in ``backups.offsite_remote`` (Backblaze B2 to start), and the
 remote copies beyond ``backups.offsite_copies_kept`` are deleted
-permanently, never into the Drive trash.
+permanently, never into a trash or a B2 version history.
 
 The bot knows only the rclone remote path. rclone finds its config
-file (which holds the Google token) through the ``RCLONE_CONFIG``
+file (which holds the storage keys) through the ``RCLONE_CONFIG``
 environment variable, read by rclone itself. Nothing from that file is
 read or logged here.
 
@@ -64,9 +64,12 @@ RCLONE_TIMEOUT_SECONDS = 300
 # The most characters of rclone's stderr put in an #errors line.
 STDERR_LIMIT = 500
 
-# rclone deletefile sends a Drive file to the trash by default. This
-# deletes it permanently (https://rclone.org/drive/).
-SKIP_TRASH_FLAG = "--drive-use-trash=false"
+# Flags that make rclone deletefile remove a file for good, whatever
+# the remote's config says. Each one applies only to its own backend.
+# Google Drive sends a deleted file to the trash by default
+# (https://rclone.org/drive/). B2 only hides it and keeps its old
+# versions unless hard delete is on (https://rclone.org/b2/).
+PERMANENT_DELETE_FLAGS = ("--drive-use-trash=false", "--b2-hard-delete")
 
 # The only environment variables rclone is given. Everything else,
 # DISCORD_TOKEN included, stays in the bot. The proxy names are kept
@@ -307,8 +310,8 @@ async def apply_retention(
     The remote is listed with ``rclone lsf``. Only names of the form
     ``maika-YYYY-MM-DD.db`` count, ordered by the date in the name,
     and other files are never touched. Each extra copy is deleted
-    with ``rclone deletefile`` and the flag that skips the Drive
-    trash, oldest first. Returns the number of copies left. A failure
+    with ``rclone deletefile`` and ``PERMANENT_DELETE_FLAGS``, oldest
+    first. Returns the number of copies left. A failure
     raises RcloneError.
     """
     listing = await _run_checked(runner, ["lsf", remote])
@@ -322,7 +325,11 @@ async def apply_retention(
     for name in reversed(extra):
         await _run_checked(
             runner,
-            ["deletefile", SKIP_TRASH_FLAG, remote_file_path(remote, name)],
+            [
+                "deletefile",
+                *PERMANENT_DELETE_FLAGS,
+                remote_file_path(remote, name),
+            ],
         )
     return len(newest_first) - len(extra)
 

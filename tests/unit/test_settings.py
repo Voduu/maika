@@ -745,7 +745,7 @@ def test_offsite_settings_definitions():
 
     remote = registry.get("backups.offsite_remote")
     assert remote.value_type is ValueType.TEXT
-    assert remote.default == "gdrive:maika-backups"
+    assert remote.default == "b2offsite:maika-backups"
     assert remote.level is SettingLevel.ADVANCED
     assert remote.description == (
         "rclone remote and folder for the offsite copies."

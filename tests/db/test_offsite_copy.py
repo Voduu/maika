@@ -39,7 +39,7 @@ TUESDAY = datetime.date(2026, 11, 10)
 SATURDAY = datetime.date(2026, 11, 14)
 NEXT_SUNDAY = datetime.date(2026, 11, 15)
 FOUR_AM = datetime.time(4, 0)
-REMOTE = "gdrive:maika-backups"
+REMOTE = "b2offsite:maika-backups"
 NOW_TS = 1_800_000_000
 BACKUP_PATH = Path("backups") / "daily" / "maika-2026-11-09.db"
 
@@ -221,8 +221,8 @@ def test_newest_daily_backup_none(tmp_path):
 
 
 def test_remote_file_path():
-    assert remote_file_path("gdrive:maika-backups", "a.db") == (
-        "gdrive:maika-backups/a.db"
+    assert remote_file_path("b2offsite:maika-backups", "a.db") == (
+        "b2offsite:maika-backups/a.db"
     )
     assert remote_file_path("gdrive:", "a.db") == "gdrive:a.db"
     assert remote_file_path("gdrive:folder/", "a.db") == "gdrive:folder/a.db"
@@ -242,7 +242,7 @@ def test_upload_command(tmp_path):
             [
                 "copyto",
                 str(backup),
-                "gdrive:maika-backups/maika-2026-11-09.db",
+                "b2offsite:maika-backups/maika-2026-11-09.db",
             ],
             300,
         )
@@ -270,14 +270,23 @@ def test_retention_deletes_beyond_limit_oldest_first():
         [
             "deletefile",
             "--drive-use-trash=false",
-            "gdrive:maika-backups/maika-2026-10-04.db",
+            "--b2-hard-delete",
+            "b2offsite:maika-backups/maika-2026-10-04.db",
         ],
         [
             "deletefile",
             "--drive-use-trash=false",
-            "gdrive:maika-backups/maika-2026-10-11.db",
+            "--b2-hard-delete",
+            "b2offsite:maika-backups/maika-2026-10-11.db",
         ],
     ]
+
+
+def test_permanent_delete_flags():
+    assert offsite_copy.PERMANENT_DELETE_FLAGS == (
+        "--drive-use-trash=false",
+        "--b2-hard-delete",
+    )
 
 
 def test_retention_leaves_other_names():
@@ -298,7 +307,7 @@ def test_retention_leaves_other_names():
 
     assert kept == 1
     deleted = [args[-1] for args in runner.commands() if args[0] != "lsf"]
-    assert deleted == ["gdrive:maika-backups/maika-2020-01-01.db"]
+    assert deleted == ["b2offsite:maika-backups/maika-2020-01-01.db"]
 
 
 def test_retention_within_limit_deletes_nothing():
@@ -354,7 +363,7 @@ def test_cycle_uploads_newest_and_records_success(migrated_db, database_path):
     )
     newest = daily_backup_dir(database_path) / "maika-2026-11-09.db"
     assert runner.commands() == [
-        ["copyto", str(newest), "gdrive:maika-backups/maika-2026-11-09.db"],
+        ["copyto", str(newest), "b2offsite:maika-backups/maika-2026-11-09.db"],
         ["lsf", REMOTE],
     ]
     assert get_state(migrated_db, LAST_SUCCESS_STATE_KEY) == "2026-11-09"
@@ -363,7 +372,7 @@ def test_cycle_uploads_newest_and_records_success(migrated_db, database_path):
             LogStream.BOT_LOG,
             LogLevel.INFO,
             "Offsite copy saved: maika-2026-11-09.db to "
-            "gdrive:maika-backups. 2 weekly copies kept.",
+            "b2offsite:maika-backups. 2 weekly copies kept.",
         )
     ]
 
@@ -392,6 +401,7 @@ def test_cycle_uses_remote_and_copies_kept_settings(
         [
             "deletefile",
             "--drive-use-trash=false",
+            "--b2-hard-delete",
             "other:folder/maika-2026-11-01.db",
         ],
     ]
@@ -449,7 +459,7 @@ def test_failed_upload_deletes_nothing_and_keeps_state(
     assert router.posts == []
     [record] = caplog.records
     assert record.getMessage() == (
-        "Offsite copy of maika-2026-11-09.db to gdrive:maika-backups "
+        "Offsite copy of maika-2026-11-09.db to b2offsite:maika-backups "
         "failed. rclone copyto exited with code 1. Failed to copy"
     )
 
