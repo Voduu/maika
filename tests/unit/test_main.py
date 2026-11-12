@@ -182,7 +182,7 @@ def test_main_creates_database_and_tables(
     ).fetchall()
     connection.close()
     assert FOUNDATION_TABLES <= tables
-    assert versions == [(1,)]
+    assert versions == [(1,), (2,)]
     applied_records = [
         record
         for record in caplog.records

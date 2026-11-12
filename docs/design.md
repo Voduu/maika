@@ -1422,6 +1422,7 @@ CREATE TABLE user_settings (
 
 - Only values a person has set are stored. Each key is declared once in code with its type, default, and description, like `SettingDefinition` (9.6).
 - The first keys are `timezone` and `birthday` (month and day, entered with `/birthday set`, used by calendar events in 3.15). Later keys need no migration.
+- The `birthday` value is stored as `MM-DD` text (`02-29` is allowed). The `timezone` value is stored as the canonical IANA name, whatever capitalization the person typed.
 - Changes to a person's own settings stay out of the audit log, which covers owner changes (9.5).
 - Commands: `/timezone set` and `/birthday set` (`prefs.set`) and `/timezone show` (`prefs.view`), all level 0.
 
