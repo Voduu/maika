@@ -18,6 +18,7 @@ import re
 import zoneinfo
 from dataclasses import dataclass
 
+from maika.local_time import local_to_utc
 from maika.month_names import MONTH_NAMES, MONTH_TOO_SHORT_MESSAGE
 from maika.user_settings import LEAP_YEAR
 
@@ -531,22 +532,6 @@ def _candidate_dates(
     return _yearless_dates(form.month, form.day, today.year)
 
 
-def _local_to_utc(
-    date: datetime.date, clock: datetime.time, zone: zoneinfo.ZoneInfo
-) -> int:
-    """Return the UTC seconds of a local date and clock time.
-
-    fold=0 handles daylight saving. A time that occurs twice uses the
-    first occurrence. A time that does not exist is read with the
-    offset from before the change, which lands that far past it:
-    2:30 AM on the spring-forward day becomes 3:30 AM.
-    """
-    local = datetime.datetime.combine(
-        date, clock.replace(tzinfo=None, fold=0), tzinfo=zone
-    )
-    return int(local.timestamp())
-
-
 def _first_moment_after(
     dates: list[datetime.date],
     clock: datetime.time,
@@ -555,7 +540,7 @@ def _first_moment_after(
 ) -> int:
     """Return the first candidate moment after now, or raise PAST."""
     for date in dates:
-        due_at = _local_to_utc(date, clock, zone)
+        due_at = local_to_utc(date, clock, zone)
         if due_at > now:
             return due_at
     raise WhenParseError(WhenParseReason.PAST, PAST_MESSAGE)
