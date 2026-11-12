@@ -196,7 +196,7 @@ Anime episode alerts are covered by Sonarr's Discord connection (Parking Lot).
 - `reminders` table (9.10): one row per reminder, with the due time, message, owner, delivery (DM or channel), status, and an optional repeat rule. `user_settings` (9.11) holds each person's timezone.
 - One loop selects rows with status `pending` and a due time in the past.
 - `/remind when message` for entry (`/remind 2h submit assignment`). Options choose DM or this channel, and a `repeat` dropdown of common patterns (daily, weekly, every 2 weeks, monthly, last day of the month, and similar). `/remind list` shows the person's pending reminders, plus reminders that could not be delivered in the last 7 days (marked "not delivered", with their text), as a private reply, and `/remind cancel` removes one.
-- **Timezones.** Times are stored as UTC seconds. `/timezone set` stores a person's timezone (an IANA name such as `America/Los_Angeles`, with autocomplete) in `user_settings`, and `/timezone show` displays it. Clock times such as "tomorrow 9am" are read in the person's timezone, and a person without one set is asked to set it. Durations such as `2h` need no timezone. Confirmations use Discord timestamps (`<t:unix:F>`, `<t:unix:R>`), which each viewer sees in their own timezone.
+- **Timezones.** Times are stored as UTC seconds. `/timezone set` stores a person's timezone (an IANA name such as `America/Los_Angeles`, with autocomplete) in `user_settings`, and `/timezone show` displays it. Autocomplete matches part of the name without regard to capitalization and shows at most 25 names; with nothing typed it shows a short list of common zones. Clock times such as "tomorrow 9am" are read in the person's timezone, and a person without one set is asked to set it. Durations such as `2h` need no timezone. Confirmations use Discord timestamps (`<t:unix:F>`, `<t:unix:R>`), which each viewer sees in their own timezone.
 - **Repeating reminders.** The rule is stored as RFC 5545 recurrence text (`FREQ=WEEKLY;BYDAY=TU`, `FREQ=MONTHLY;BYMONTHDAY=-1` for the last day of the month) and computed with python-dateutil in the reminder's timezone, so a 9 a.m. reminder stays at 9 a.m. across daylight saving changes. After a delivery, the same row moves to the next occurrence and stays `pending`. A setting (`reminders.min_repeat_minutes`) sets the shortest allowed repeat interval.
 - Delivery is a DM by default. If the DM fails (the person turned off DMs from server members, or blocked the bot), the bot posts a short notice in the channel where the reminder was set, mentioning the person and saying a reminder could not be delivered ("I couldn't DM you a reminder. Check `/remind list`."). The notice never contains the reminder text, so a private reminder is not exposed. The status becomes `failed`, and the text stays readable in `/remind list`. If the notice cannot be posted either (a reminder set in a DM, or the bot cannot post there), the status is still `failed`. A repeating reminder whose DM fails posts the same notice, moves to its next due time, and stays `pending`. A reminder created with the `channel` delivery option posts its text in that channel by choice.
 - A one-time reminder keeps its row after delivery (status `delivered`, with the delivery time and route). Cancelled and failed rows stay too.
@@ -1121,6 +1121,7 @@ Ideas not yet scheduled:
 - Cross-checks between settings (10.16): `/config set` refuses a change that breaks one. Build the mechanism with the first pair of settings that needs it.
 - `/config set` and `/config reset` write global rows only. Add a scope option (this server or everywhere) with the first server-scoped setting.
 - Permission commands cannot set a server-scoped row for a server the owner is not in. Add an optional `server` ID option on `/perm grant`, `/perm deny`, `/perm reset`, `/block` and `/unblock` if the case comes up.
+- No command removes a timezone or a birthday, and /forget all leaves them. Add /timezone clear and /birthday clear if a person asks.
 
 ---
 
@@ -1420,7 +1421,7 @@ CREATE TABLE user_settings (
 | Owner | timezone | America/Los_Angeles | 1793300000 |
 | Friend A | timezone | America/New_York | 1793300500 |
 
-- Only values a person has set are stored. Each key is declared once in code with its type, default, and description, like `SettingDefinition` (9.6).
+- Only values a person has set are stored. Each key is declared once in code with its type, default, and description, like `SettingDefinition` (9.6). A key without a default reads as not set.
 - The first keys are `timezone` and `birthday` (month and day, entered with `/birthday set`, used by calendar events in 3.15). Later keys need no migration.
 - The `birthday` value is stored as `MM-DD` text (`02-29` is allowed). The `timezone` value is stored as the canonical IANA name, whatever capitalization the person typed.
 - Changes to a person's own settings stay out of the audit log, which covers owner changes (9.5).
