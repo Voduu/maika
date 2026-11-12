@@ -614,7 +614,7 @@ def test_tree_has_remind_group(migrated_db):
     group = make_client(migrated_db).tree.get_command("remind")
 
     assert isinstance(group, app_commands.Group)
-    assert [c.name for c in group.commands] == ["add"]
+    assert [c.name for c in group.commands] == ["add", "list", "cancel"]
     assert 1 <= len(group.description) < 100
     for command in group.commands:
         assert 1 <= len(command.description) < 100

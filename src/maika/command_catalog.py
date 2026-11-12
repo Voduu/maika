@@ -27,7 +27,11 @@ from maika.prefs_commands import (
     TIMEZONE_SET_COMMAND,
     TIMEZONE_SHOW_COMMAND,
 )
-from maika.remind_commands import REMIND_ADD_COMMAND
+from maika.remind_commands import (
+    REMIND_ADD_COMMAND,
+    REMIND_CANCEL_COMMAND,
+    REMIND_LIST_COMMAND,
+)
 
 # The memory keys (design sections 1.2 and 2.5). The commands come at
 # build step 13; the keys are registered now so overrides and
@@ -81,6 +85,8 @@ def build_command_registry() -> CommandRegistry:
             TIMEZONE_SHOW_COMMAND,
             BIRTHDAY_SET_COMMAND,
             REMIND_ADD_COMMAND,
+            REMIND_LIST_COMMAND,
+            REMIND_CANCEL_COMMAND,
         ],
         extra_keys=MEMORY_KEYS,
     )
