@@ -112,11 +112,11 @@ def test_overview_with_foundation_settings(migrated_db):
     every = config_list(migrated_db, SETTINGS, None, True)
 
     assert basic.message == (
-        "logging (8)\nbackups (4)\ncommands (0)\n"
+        "logging (8)\nbackups (4)\ncommands (0)\nreminders (1)\n"
         "Use `/config list category:<name>`."
     )
     assert every.message == (
-        "logging (16)\nbackups (7)\ncommands (1)\n"
+        "logging (16)\nbackups (7)\ncommands (1)\nreminders (2)\n"
         "Use `/config list category:<name>`."
     )
 
@@ -276,7 +276,9 @@ def test_key_choices_starting_matches_come_first():
 
 def test_key_choices_empty_text_lists_keys_in_order():
     choices = key_choices(SETTINGS, "")
-    assert [choice.value for choice in choices] == list(SETTINGS.keys())
+    assert [choice.value for choice in choices] == list(SETTINGS.keys())[
+        :AUTOCOMPLETE_CHOICE_LIMIT
+    ]
 
 
 def test_key_choices_no_match():
@@ -450,7 +452,7 @@ def test_list_callback_owner_overview(migrated_db):
     asyncio.run(subcommand(client, "list").callback(interaction))
 
     assert reply(interaction) == (
-        "logging (8)\nbackups (4)\ncommands (0)\n"
+        "logging (8)\nbackups (4)\ncommands (0)\nreminders (1)\n"
         "Use `/config list category:<name>`.",
         True,
     )

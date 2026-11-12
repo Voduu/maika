@@ -8,6 +8,7 @@ from maika.foundation_settings import (
     CONFIRM_TIMEOUT_KEY,
     FOUNDATION_SETTINGS,
     LOGGING_CATEGORY,
+    REMINDERS_CATEGORY,
     build_foundation_registry,
 )
 from maika.settings import (
@@ -658,11 +659,13 @@ FOUNDATION_KEYS = {
     "backups.offsite_day",
     "backups.offsite_remote",
     "commands.confirm_timeout_seconds",
+    "reminders.default_time",
+    "reminders.max_pending_per_person",
 }
 
 
-def test_foundation_has_exactly_24_settings():
-    assert len(FOUNDATION_SETTINGS) == 24
+def test_foundation_has_exactly_26_settings():
+    assert len(FOUNDATION_SETTINGS) == 26
 
 
 def test_foundation_keys_match_design():
@@ -680,10 +683,12 @@ def test_foundation_categories():
     assert LOGGING_CATEGORY == "logging"
     assert BACKUPS_CATEGORY == "backups"
     assert COMMANDS_CATEGORY == "commands"
+    assert REMINDERS_CATEGORY == "reminders"
     assert {d.category for d in FOUNDATION_SETTINGS} == {
         "logging",
         "backups",
         "commands",
+        "reminders",
     }
 
 
@@ -711,6 +716,30 @@ def test_foundation_registry():
     assert [d.key for d in registry.definitions_in_category("commands")] == [
         "commands.confirm_timeout_seconds"
     ]
+    assert [d.key for d in registry.definitions_in_category("reminders")] == [
+        "reminders.default_time",
+        "reminders.max_pending_per_person",
+    ]
+
+
+def test_reminder_settings():
+    registry = build_foundation_registry()
+    default_time = registry.get("reminders.default_time")
+    max_pending = registry.get("reminders.max_pending_per_person")
+
+    assert default_time.value_type is ValueType.TIME
+    assert default_time.default == datetime.time(8, 0)
+    assert default_time.level is SettingLevel.BASIC
+    assert default_time.server_scope is False
+    assert default_time.description == (
+        "Clock time used when a reminder gives a day but no time."
+    )
+    assert max_pending.value_type is ValueType.INT
+    assert max_pending.default == 25
+    assert (max_pending.minimum, max_pending.maximum) == (1, 500)
+    assert max_pending.level is SettingLevel.ADVANCED
+    assert max_pending.server_scope is False
+    assert max_pending.description == "Pending reminders one person may hold."
 
 
 def test_every_backups_setting_is_in_backups_category():

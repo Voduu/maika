@@ -30,6 +30,7 @@ from maika.slash_commands import (
     build_block_commands,
     build_config_group,
     build_perm_group,
+    build_remind_group,
     build_timezone_group,
 )
 
@@ -150,6 +151,14 @@ class MaikaClient(discord.Client):
         )
         self.tree.add_command(
             build_birthday_group(
+                connection=self.connection,
+                registry=self.command_registry,
+                owner_id=self.config.owner_id,
+                log_usage=self.log_usage,
+            )
+        )
+        self.tree.add_command(
+            build_remind_group(
                 connection=self.connection,
                 registry=self.command_registry,
                 owner_id=self.config.owner_id,

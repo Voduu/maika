@@ -1,10 +1,12 @@
-"""The foundation settings: logging, backups and command lane.
+"""The settings defined so far: logging, backups, commands, reminders.
 
 These are the 23 definitions of ``docs/design.md`` section 10.15,
-copied exactly, and ``commands.confirm_timeout_seconds`` from 10.2
-for the confirmation buttons. The log settings are in the "logging"
-category and the seven ``backups.*`` settings in "backups". Other
-sections add their settings with the features that use them.
+copied exactly, ``commands.confirm_timeout_seconds`` from 10.2 for
+the confirmation buttons, and two reminder settings from 10.12 for
+/remind add. The log settings are in the "logging" category, the
+seven ``backups.*`` settings in "backups" and the reminder settings
+in "reminders". Other sections add their settings with the features
+that use them.
 """
 
 import datetime
@@ -19,6 +21,7 @@ from maika.settings import (
 LOGGING_CATEGORY = "logging"
 BACKUPS_CATEGORY = "backups"
 COMMANDS_CATEGORY = "commands"
+REMINDERS_CATEGORY = "reminders"
 
 LOG_LEVEL_CHOICES = ("debug", "info", "warning", "error")
 
@@ -41,6 +44,14 @@ CONFIRM_TIMEOUT_KEY = "commands.confirm_timeout_seconds"
 CONFIRM_TIMEOUT_DEFAULT_SECONDS = 60
 CONFIRM_TIMEOUT_MIN_SECONDS = 10
 CONFIRM_TIMEOUT_MAX_SECONDS = 600
+
+REMINDER_DEFAULT_TIME_KEY = "reminders.default_time"
+REMINDER_DEFAULT_TIME = datetime.time(8, 0)
+
+MAX_PENDING_REMINDERS_KEY = "reminders.max_pending_per_person"
+MAX_PENDING_REMINDERS_DEFAULT = 25
+MAX_PENDING_REMINDERS_MIN = 1
+MAX_PENDING_REMINDERS_MAX = 500
 
 FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
     SettingDefinition(
@@ -289,6 +300,26 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         minimum=CONFIRM_TIMEOUT_MIN_SECONDS,
         maximum=CONFIRM_TIMEOUT_MAX_SECONDS,
         description="Seconds before confirmation buttons stop working.",
+    ),
+    SettingDefinition(
+        key=REMINDER_DEFAULT_TIME_KEY,
+        category=REMINDERS_CATEGORY,
+        level=SettingLevel.BASIC,
+        server_scope=False,
+        value_type=ValueType.TIME,
+        default=REMINDER_DEFAULT_TIME,
+        description="Clock time used when a reminder gives a day but no time.",
+    ),
+    SettingDefinition(
+        key=MAX_PENDING_REMINDERS_KEY,
+        category=REMINDERS_CATEGORY,
+        level=SettingLevel.ADVANCED,
+        server_scope=False,
+        value_type=ValueType.INT,
+        default=MAX_PENDING_REMINDERS_DEFAULT,
+        minimum=MAX_PENDING_REMINDERS_MIN,
+        maximum=MAX_PENDING_REMINDERS_MAX,
+        description="Pending reminders one person may hold.",
     ),
 )
 

@@ -852,6 +852,8 @@ def test_real_registry_offers_star_and_memory_keys():
         "prefs.*",
         "prefs.set",
         "prefs.view",
+        "remind.*",
+        "remind.create",
     )
 
 

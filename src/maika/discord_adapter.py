@@ -63,6 +63,26 @@ def guild_id_from_interaction(interaction: discord.Interaction) -> int:
     return interaction.guild_id
 
 
+def server_channel_id(interaction: discord.Interaction) -> int | None:
+    """Return the interaction's channel ID, or None in a DM."""
+    if interaction.guild_id is None:
+        return None
+    return interaction.channel_id
+
+
+def bot_can_post(interaction: discord.Interaction) -> bool:
+    """Return True when the bot may send messages in the channel.
+
+    ``app_permissions`` holds the bot's permissions in the channel
+    where the command ran. A thread needs the permission to send
+    messages in threads.
+    """
+    permissions = interaction.app_permissions
+    if isinstance(interaction.channel, discord.Thread):
+        return permissions.send_messages_in_threads
+    return permissions.send_messages
+
+
 def context_from_interaction(
     interaction: discord.Interaction,
 ) -> CommandContext:
