@@ -22,6 +22,11 @@ from maika.perm_commands import (
 )
 from maika.perm_lookup_commands import PERM_HISTORY_COMMAND, PERM_KEYS_COMMAND
 from maika.permissions import Level, PermissionKey
+from maika.prefs_commands import (
+    BIRTHDAY_SET_COMMAND,
+    TIMEZONE_SET_COMMAND,
+    TIMEZONE_SHOW_COMMAND,
+)
 
 # The memory keys (design sections 1.2 and 2.5). The commands come at
 # build step 13; the keys are registered now so overrides and
@@ -71,6 +76,9 @@ def build_command_registry() -> CommandRegistry:
             PERM_KEYS_COMMAND,
             BLOCK_COMMAND,
             UNBLOCK_COMMAND,
+            TIMEZONE_SET_COMMAND,
+            TIMEZONE_SHOW_COMMAND,
+            BIRTHDAY_SET_COMMAND,
         ],
         extra_keys=MEMORY_KEYS,
     )

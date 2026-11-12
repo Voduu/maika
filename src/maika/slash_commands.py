@@ -6,7 +6,8 @@ command. The permission check, the usage log and the reply all
 happen there.
 
 The ``key`` and ``category`` parameters of /config autocomplete from
-the settings registry, for the owner only.
+the settings registry, for the owner only. The ``name`` parameter of
+/timezone set autocompletes timezone names for everyone.
 """
 
 import sqlite3
@@ -73,6 +74,18 @@ from maika.permissions import (
     Level,
     PermissionRegistry,
 )
+from maika.prefs_commands import (
+    BIRTHDAY_SET_NAME,
+    FIRST_DAY,
+    LAST_DAY,
+    MONTH_NAMES,
+    TIMEZONE_SET_NAME,
+    TIMEZONE_SHOW_NAME,
+    birthday_set,
+    timezone_name_matches,
+    timezone_set,
+    timezone_show,
+)
 from maika.results import CommandResult
 from maika.settings import SettingsRegistry
 
@@ -131,6 +144,23 @@ BLOCK_DESCRIPTION = "Block a person from chat, or from chat and commands"
 BLOCK_KIND_DESCRIPTION = "What to block"
 UNBLOCK_DESCRIPTION = "Remove a person's block"
 
+TIMEZONE_GROUP_NAME = "timezone"
+TIMEZONE_GROUP_DESCRIPTION = "Your timezone, used for reminder times"
+TIMEZONE_SET_SUBCOMMAND = "set"
+TIMEZONE_SET_DESCRIPTION = "Set your timezone"
+TIMEZONE_NAME_DESCRIPTION = (
+    "Start typing to search every timezone, for example london or new_york"
+)
+TIMEZONE_SHOW_SUBCOMMAND = "show"
+TIMEZONE_SHOW_DESCRIPTION = "Show your timezone and the time there now"
+
+BIRTHDAY_GROUP_NAME = "birthday"
+BIRTHDAY_GROUP_DESCRIPTION = "Your birthday"
+BIRTHDAY_SET_SUBCOMMAND = "set"
+BIRTHDAY_SET_DESCRIPTION = "Set your birthday (month and day)"
+BIRTHDAY_MONTH_DESCRIPTION = "The month of your birthday"
+BIRTHDAY_DAY_DESCRIPTION = "The day of the month, 1 to 31"
+
 # One choice per level, named as the levels are shown in replies.
 LEVEL_CHOICES = [
     app_commands.Choice(name=level_name(level), value=level.value)
@@ -145,6 +175,12 @@ SCOPE_CHOICES = [
 BLOCK_KIND_CHOICES = [
     app_commands.Choice(name="Chat only", value=BLOCK_KIND_CHAT),
     app_commands.Choice(name="Chat and commands", value=BLOCK_KIND_ALL),
+]
+
+# One choice per month, named in full, with values 1 to 12.
+MONTH_CHOICES = [
+    app_commands.Choice(name=month_name, value=number)
+    for number, month_name in enumerate(MONTH_NAMES, start=1)
 ]
 
 
@@ -806,3 +842,134 @@ def build_block_commands(
         )
 
     return [block_command, unblock_command]
+
+
+def timezone_choices(current: str) -> Choices:
+    """Return the timezone names matching the typed text as choices.
+
+    The matching is ``timezone_name_matches``. The name and value of
+    each choice are the timezone name.
+    """
+    return [
+        app_commands.Choice(name=name, value=name)
+        for name in timezone_name_matches(current)
+    ]
+
+
+async def timezone_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> Choices:
+    """Return the timezone choices for anyone who asks.
+
+    Timezone names are public, so every person gets them.
+    """
+    return timezone_choices(current)
+
+
+def build_timezone_group(
+    *,
+    connection: sqlite3.Connection,
+    registry: CommandRegistry,
+    owner_id: int,
+    log_usage: Callable[[CommandUsage], None],
+) -> app_commands.Group:
+    """Return the /timezone group with set and show.
+
+    ``log_usage`` receives each command call's usage record.
+    """
+    group = app_commands.Group(
+        name=TIMEZONE_GROUP_NAME, description=TIMEZONE_GROUP_DESCRIPTION
+    )
+
+    @group.command(
+        name=TIMEZONE_SET_SUBCOMMAND, description=TIMEZONE_SET_DESCRIPTION
+    )
+    @app_commands.describe(name=TIMEZONE_NAME_DESCRIPTION)
+    @app_commands.autocomplete(name=timezone_autocomplete)
+    async def timezone_set_command(
+        interaction: discord.Interaction, name: str
+    ) -> None:
+        """Run /timezone set."""
+        context = context_from_interaction(interaction)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=TIMEZONE_SET_NAME,
+            function=lambda: timezone_set(
+                connection,
+                user_id=context.user_id,
+                name=name,
+                now=context.now,
+            ),
+            log_usage=log_usage,
+        )
+
+    @group.command(
+        name=TIMEZONE_SHOW_SUBCOMMAND, description=TIMEZONE_SHOW_DESCRIPTION
+    )
+    async def timezone_show_command(interaction: discord.Interaction) -> None:
+        """Run /timezone show."""
+        context = context_from_interaction(interaction)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=TIMEZONE_SHOW_NAME,
+            function=lambda: timezone_show(
+                connection, user_id=context.user_id, now=context.now
+            ),
+            log_usage=log_usage,
+        )
+
+    return group
+
+
+def build_birthday_group(
+    *,
+    connection: sqlite3.Connection,
+    registry: CommandRegistry,
+    owner_id: int,
+    log_usage: Callable[[CommandUsage], None],
+) -> app_commands.Group:
+    """Return the /birthday group with set.
+
+    ``log_usage`` receives each command call's usage record.
+    """
+    group = app_commands.Group(
+        name=BIRTHDAY_GROUP_NAME, description=BIRTHDAY_GROUP_DESCRIPTION
+    )
+
+    @group.command(
+        name=BIRTHDAY_SET_SUBCOMMAND, description=BIRTHDAY_SET_DESCRIPTION
+    )
+    @app_commands.describe(
+        month=BIRTHDAY_MONTH_DESCRIPTION, day=BIRTHDAY_DAY_DESCRIPTION
+    )
+    @app_commands.choices(month=MONTH_CHOICES)
+    async def birthday_set_command(
+        interaction: discord.Interaction,
+        month: app_commands.Choice[int],
+        day: app_commands.Range[int, FIRST_DAY, LAST_DAY],
+    ) -> None:
+        """Run /birthday set."""
+        context = context_from_interaction(interaction)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=BIRTHDAY_SET_NAME,
+            function=lambda: birthday_set(
+                connection,
+                user_id=context.user_id,
+                month=month.value,
+                day=day,
+                now=context.now,
+            ),
+            log_usage=log_usage,
+        )
+
+    return group
