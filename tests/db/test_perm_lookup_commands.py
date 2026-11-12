@@ -387,6 +387,7 @@ def test_permission_areas():
         "memory",
         "perm",
         "prefs",
+        "remind",
     )
 
 
@@ -408,7 +409,13 @@ def test_area_autocomplete_answers_owner():
 
     choices = asyncio.run(autocomplete(autocomplete_interaction(OWNER), ""))
 
-    assert [c.value for c in choices] == ["config", "memory", "perm", "prefs"]
+    assert [c.value for c in choices] == [
+        "config",
+        "memory",
+        "perm",
+        "prefs",
+        "remind",
+    ]
 
 
 def test_area_autocomplete_empty_for_non_owner():

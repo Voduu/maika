@@ -37,9 +37,11 @@ from maika.config_commands import (
     setting_categories,
 )
 from maika.discord_adapter import (
+    bot_can_post,
     context_from_interaction,
     guild_id_from_interaction,
     handle_command,
+    server_channel_id,
 )
 from maika.log_router import LogLevel, LogRouter, LogStream
 from maika.month_names import MONTH_NAMES
@@ -86,6 +88,9 @@ from maika.prefs_commands import (
     timezone_set,
     timezone_show,
 )
+from maika.remind_commands import MESSAGE_LIMIT, REMIND_ADD_NAME, remind_add
+from maika.reminders import DELIVERY_CHANNEL, DELIVERY_DM
+from maika.repeat_rules import REPEAT_CHOICE_LABELS
 from maika.results import CommandResult
 from maika.settings import SettingsRegistry
 
@@ -161,6 +166,16 @@ BIRTHDAY_SET_DESCRIPTION = "Set your birthday (month and day)"
 BIRTHDAY_MONTH_DESCRIPTION = "The month of your birthday"
 BIRTHDAY_DAY_DESCRIPTION = "The day of the month, 1 to 31"
 
+# /remind list and /remind cancel join this group in a later slice.
+REMIND_GROUP_NAME = "remind"
+REMIND_GROUP_DESCRIPTION = "Set reminders"
+REMIND_ADD_SUBCOMMAND = "add"
+REMIND_ADD_DESCRIPTION = "Set a reminder"
+REMIND_WHEN_DESCRIPTION = "When, for example 2h, tomorrow 9am or friday 3pm"
+REMIND_MESSAGE_DESCRIPTION = "What to remind you about"
+REMIND_DELIVERY_DESCRIPTION = "Where to send it (default: Direct message)"
+REMIND_REPEAT_DESCRIPTION = "Repeat it (default: once)"
+
 # One choice per level, named as the levels are shown in replies.
 LEVEL_CHOICES = [
     app_commands.Choice(name=level_name(level), value=level.value)
@@ -175,6 +190,18 @@ SCOPE_CHOICES = [
 BLOCK_KIND_CHOICES = [
     app_commands.Choice(name="Chat only", value=BLOCK_KIND_CHAT),
     app_commands.Choice(name="Chat and commands", value=BLOCK_KIND_ALL),
+]
+
+DELIVERY_CHOICES = [
+    app_commands.Choice(name="Direct message", value=DELIVERY_DM),
+    app_commands.Choice(name="This channel", value=DELIVERY_CHANNEL),
+]
+
+# One choice per repeat pattern, in dropdown order. The value is the
+# RepeatChoice name.
+REPEAT_CHOICES = [
+    app_commands.Choice(name=label, value=choice.name)
+    for choice, label in REPEAT_CHOICE_LABELS.items()
 ]
 
 # One choice per month, named in full, with values 1 to 12.
@@ -967,6 +994,70 @@ def build_birthday_group(
                 user_id=context.user_id,
                 month=month.value,
                 day=day,
+                now=context.now,
+            ),
+            log_usage=log_usage,
+        )
+
+    return group
+
+
+def build_remind_group(
+    *,
+    connection: sqlite3.Connection,
+    registry: CommandRegistry,
+    owner_id: int,
+    log_usage: Callable[[CommandUsage], None],
+) -> app_commands.Group:
+    """Return the /remind group with add.
+
+    Discord does not let a command with subcommands take options of
+    its own, so creating a reminder is /remind add, next to the list
+    and cancel subcommands that come later. ``log_usage`` receives
+    each command call's usage record.
+    """
+    group = app_commands.Group(
+        name=REMIND_GROUP_NAME, description=REMIND_GROUP_DESCRIPTION
+    )
+
+    @group.command(
+        name=REMIND_ADD_SUBCOMMAND, description=REMIND_ADD_DESCRIPTION
+    )
+    @app_commands.describe(
+        when=REMIND_WHEN_DESCRIPTION,
+        message=REMIND_MESSAGE_DESCRIPTION,
+        delivery=REMIND_DELIVERY_DESCRIPTION,
+        repeat=REMIND_REPEAT_DESCRIPTION,
+    )
+    @app_commands.choices(delivery=DELIVERY_CHOICES, repeat=REPEAT_CHOICES)
+    async def remind_add_command(
+        interaction: discord.Interaction,
+        when: str,
+        message: app_commands.Range[str, None, MESSAGE_LIMIT],
+        delivery: app_commands.Choice[str] | None = None,
+        repeat: app_commands.Choice[str] | None = None,
+    ) -> None:
+        """Run /remind add."""
+        context = context_from_interaction(interaction)
+        channel_id = server_channel_id(interaction)
+        can_post = bot_can_post(interaction)
+        delivery_value = DELIVERY_DM if delivery is None else delivery.value
+        repeat_value = None if repeat is None else repeat.value
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=REMIND_ADD_NAME,
+            function=lambda: remind_add(
+                connection,
+                user_id=context.user_id,
+                when=when,
+                message=message,
+                delivery=delivery_value,
+                repeat=repeat_value,
+                channel_id=channel_id,
+                bot_can_post=can_post,
                 now=context.now,
             ),
             log_usage=log_usage,
