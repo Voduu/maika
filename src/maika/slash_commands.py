@@ -42,6 +42,7 @@ from maika.discord_adapter import (
     handle_command,
 )
 from maika.log_router import LogLevel, LogRouter, LogStream
+from maika.month_names import MONTH_NAMES
 from maika.perm_commands import (
     PERM_DENY_NAME,
     PERM_GRANT_NAME,
@@ -78,7 +79,6 @@ from maika.prefs_commands import (
     BIRTHDAY_SET_NAME,
     FIRST_DAY,
     LAST_DAY,
-    MONTH_NAMES,
     TIMEZONE_SET_NAME,
     TIMEZONE_SHOW_NAME,
     birthday_set,

@@ -16,6 +16,7 @@ import sqlite3
 import zoneinfo
 
 from maika.commands import CommandCategory, CommandDefinition
+from maika.month_names import MONTH_NAMES, MONTH_TOO_SHORT_MESSAGE
 from maika.permissions import Level, PermissionKey
 from maika.results import CommandResult, FailureKind
 from maika.user_settings import (
@@ -75,27 +76,8 @@ TIMEZONE_SET_MESSAGE = "Your timezone is set to {name}."
 TIMEZONE_SHOW_MESSAGE = "Your timezone is {name}. It is {time} there now."
 NO_TIMEZONE_MESSAGE = "You have not set a timezone. Use /timezone set."
 BIRTHDAY_SET_MESSAGE = "Your birthday is set to {month_name} {day}."
-MONTH_TOO_SHORT_MESSAGE = "{month_name} has only {days} days."
 MONTH_RANGE_MESSAGE = "The month must be from 1 to 12."
 DAY_RANGE_MESSAGE = "The day must be from 1 to 31."
-
-# In month order, so MONTH_NAMES[month - 1] is the month's name. Fixed
-# English names rather than calendar.month_name, which follows the
-# machine's locale.
-MONTH_NAMES = (
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-)
 
 FIRST_MONTH = 1
 LAST_MONTH = len(MONTH_NAMES)
