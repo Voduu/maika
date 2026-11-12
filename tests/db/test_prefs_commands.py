@@ -466,13 +466,14 @@ def test_autocomplete_suggests_region_names_and_utc(typed, expected):
 
 
 def test_timezone_set_accepts_alias_not_suggested(migrated_db):
-    result = timezone_set(
-        migrated_db, user_id=ALEX, name="us/pacific", now=NOW
-    )
+    # Etc/GMT+8 is in tzdata's core "etcetera" file, so every build
+    # has it, unlike legacy links such as US/Pacific. It sits outside
+    # the suggested regions, so autocomplete never offers it.
+    result = timezone_set(migrated_db, user_id=ALEX, name="etc/gmt+8", now=NOW)
 
     assert result.success is True
-    assert result.message == "Your timezone is set to US/Pacific."
-    assert get_user_setting(migrated_db, ALEX, "timezone") == "US/Pacific"
+    assert result.message == "Your timezone is set to Etc/GMT+8."
+    assert get_user_setting(migrated_db, ALEX, "timezone") == "Etc/GMT+8"
 
 
 def test_autocomplete_at_most_25():
