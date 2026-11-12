@@ -1,19 +1,26 @@
 """Read and write rows of the reminders table.
 
-See ``docs/design.md`` sections 2.2 and 9.10. Creating a reminder is
-a person's own action, so nothing is written to the audit log.
+See ``docs/design.md`` sections 2.2 and 9.10. Creating or cancelling
+a reminder is a person's own action, so nothing is written to the
+audit log.
 
-Each function is a single statement and never starts a transaction,
-so it can run inside the caller's ``transaction()`` block. Nothing
-here reads the clock: the caller passes ``now`` in UTC Unix seconds.
+Each function is a single statement, except ``cancel_reminder``,
+which reads the row after a refused update to say why. No function
+starts a transaction, so each can run inside the caller's
+``transaction()`` block. Nothing here reads the clock: the caller
+passes ``now`` or ``since`` in UTC Unix seconds.
 """
 
+import enum
 import sqlite3
+from dataclasses import dataclass
 
 DELIVERY_DM = "dm"
 DELIVERY_CHANNEL = "channel"
 
 STATUS_PENDING = "pending"
+STATUS_FAILED = "failed"
+STATUS_CANCELLED = "cancelled"
 
 INSERT_SQL = (
     "INSERT INTO reminders "
@@ -28,6 +35,52 @@ COUNT_PENDING_SQL = (
 )
 
 SELECT_REMINDER_SQL = "SELECT * FROM reminders WHERE id = ?"
+
+SELECT_PENDING_SQL = (
+    "SELECT * FROM reminders WHERE user_id = ? AND status = ? "
+    "ORDER BY due_at, id"
+)
+
+SELECT_RECENTLY_FAILED_SQL = (
+    "SELECT * FROM reminders "
+    "WHERE user_id = ? AND status = ? AND due_at >= ? "
+    "ORDER BY due_at, id"
+)
+
+CANCEL_SQL = (
+    "UPDATE reminders SET status = :cancelled "
+    "WHERE id = :id AND user_id = :user_id AND status = :pending "
+    "RETURNING message, repeat_rule"
+)
+
+SELECT_CANCEL_REFUSAL_SQL = (
+    "SELECT message, repeat_rule FROM reminders WHERE id = ? AND user_id = ?"
+)
+
+
+class CancelOutcome(enum.Enum):
+    """What happened when a person tried to cancel a reminder."""
+
+    CANCELLED = "cancelled"
+    # No row with that id, or a row owned by someone else.
+    NOT_FOUND = "not_found"
+    # The person's own row, in a status other than pending.
+    NOT_PENDING = "not_pending"
+
+
+@dataclass(frozen=True)
+class CancelResult:
+    """The outcome of ``cancel_reminder``.
+
+    ``message`` and ``repeat_rule`` come from the row when it is the
+    person's own (CANCELLED or NOT_PENDING). For NOT_FOUND both are
+    None, so nothing about another person's reminder leaks out.
+    ``repeat_rule`` is also None for a one-time reminder.
+    """
+
+    outcome: CancelOutcome
+    message: str | None = None
+    repeat_rule: str | None = None
 
 
 def create_reminder(
@@ -81,3 +134,66 @@ def get_reminder(
 ) -> sqlite3.Row | None:
     """Return one reminder row, or None when there is no such id."""
     return connection.execute(SELECT_REMINDER_SQL, (reminder_id,)).fetchone()
+
+
+def list_pending(
+    connection: sqlite3.Connection, user_id: int
+) -> list[sqlite3.Row]:
+    """Return a person's pending reminders, soonest first.
+
+    Rows due at the same time are ordered by id.
+    """
+    return connection.execute(
+        SELECT_PENDING_SQL, (user_id, STATUS_PENDING)
+    ).fetchall()
+
+
+def list_recently_failed(
+    connection: sqlite3.Connection, user_id: int, *, since: int
+) -> list[sqlite3.Row]:
+    """Return a person's failed reminders due at or after ``since``.
+
+    The rows come soonest first, then by id.
+    """
+    return connection.execute(
+        SELECT_RECENTLY_FAILED_SQL, (user_id, STATUS_FAILED, since)
+    ).fetchall()
+
+
+def cancel_reminder(
+    connection: sqlite3.Connection, *, reminder_id: int, user_id: int
+) -> CancelResult:
+    """Cancel a person's own pending reminder.
+
+    The status becomes ``cancelled`` only when the row belongs to
+    ``user_id`` and is pending. When nothing was cancelled, the row is
+    read to tell a missing or someone else's row (NOT_FOUND) from the
+    person's own row in another status (NOT_PENDING). Run it inside
+    a ``transaction()`` block so the two statements agree.
+    """
+    cancelled = connection.execute(
+        CANCEL_SQL,
+        {
+            "cancelled": STATUS_CANCELLED,
+            "id": reminder_id,
+            "user_id": user_id,
+            "pending": STATUS_PENDING,
+        },
+    ).fetchone()
+    if cancelled is not None:
+        return CancelResult(
+            CancelOutcome.CANCELLED,
+            message=cancelled["message"],
+            repeat_rule=cancelled["repeat_rule"],
+        )
+
+    own_row = connection.execute(
+        SELECT_CANCEL_REFUSAL_SQL, (reminder_id, user_id)
+    ).fetchone()
+    if own_row is None:
+        return CancelResult(CancelOutcome.NOT_FOUND)
+    return CancelResult(
+        CancelOutcome.NOT_PENDING,
+        message=own_row["message"],
+        repeat_rule=own_row["repeat_rule"],
+    )

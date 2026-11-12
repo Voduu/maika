@@ -7,7 +7,9 @@ happen there.
 
 The ``key`` and ``category`` parameters of /config autocomplete from
 the settings registry, for the owner only. The ``name`` parameter of
-/timezone set autocompletes timezone names for everyone.
+/timezone set autocompletes timezone names for everyone. The
+``reminder`` parameter of /remind cancel autocompletes the caller's
+own pending reminders.
 """
 
 import sqlite3
@@ -88,15 +90,28 @@ from maika.prefs_commands import (
     timezone_set,
     timezone_show,
 )
-from maika.remind_commands import MESSAGE_LIMIT, REMIND_ADD_NAME, remind_add
+from maika.remind_commands import (
+    MESSAGE_LIMIT,
+    REMIND_ADD_NAME,
+    REMIND_CANCEL_NAME,
+    REMIND_LIST_NAME,
+    remind_add,
+    remind_cancel,
+    remind_list,
+    reminder_choices,
+)
 from maika.reminders import DELIVERY_CHANNEL, DELIVERY_DM
 from maika.repeat_rules import REPEAT_CHOICE_LABELS
 from maika.results import CommandResult
 from maika.settings import SettingsRegistry
 
 type Choices = list[app_commands.Choice[str]]
+type IntChoices = list[app_commands.Choice[int]]
 type AutocompleteFunction = Callable[
     [discord.Interaction, str], Awaitable[Choices]
+]
+type IntAutocompleteFunction = Callable[
+    [discord.Interaction, str], Awaitable[IntChoices]
 ]
 
 # Discord shows at most 25 autocomplete choices, and a choice name is
@@ -166,15 +181,19 @@ BIRTHDAY_SET_DESCRIPTION = "Set your birthday (month and day)"
 BIRTHDAY_MONTH_DESCRIPTION = "The month of your birthday"
 BIRTHDAY_DAY_DESCRIPTION = "The day of the month, 1 to 31"
 
-# /remind list and /remind cancel join this group in a later slice.
 REMIND_GROUP_NAME = "remind"
-REMIND_GROUP_DESCRIPTION = "Set reminders"
+REMIND_GROUP_DESCRIPTION = "Set, list and cancel reminders"
 REMIND_ADD_SUBCOMMAND = "add"
 REMIND_ADD_DESCRIPTION = "Set a reminder"
 REMIND_WHEN_DESCRIPTION = "When, for example 2h, tomorrow 9am or friday 3pm"
 REMIND_MESSAGE_DESCRIPTION = "What to remind you about"
 REMIND_DELIVERY_DESCRIPTION = "Where to send it (default: Direct message)"
 REMIND_REPEAT_DESCRIPTION = "Repeat it (default: once)"
+REMIND_LIST_SUBCOMMAND = "list"
+REMIND_LIST_DESCRIPTION = "List your reminders"
+REMIND_CANCEL_SUBCOMMAND = "cancel"
+REMIND_CANCEL_DESCRIPTION = "Cancel one of your reminders"
+REMIND_REMINDER_DESCRIPTION = "Start typing the reminder's text or number"
 
 # One choice per level, named as the levels are shown in replies.
 LEVEL_CHOICES = [
@@ -1002,6 +1021,33 @@ def build_birthday_group(
     return group
 
 
+def reminder_autocomplete(
+    connection: sqlite3.Connection,
+) -> IntAutocompleteFunction:
+    """Return the /remind cancel autocomplete for the caller.
+
+    It offers only the caller's own pending reminders. It reads the
+    database and writes nothing, and like every autocomplete it runs
+    no permission check and no usage log.
+    """
+
+    async def autocomplete(
+        interaction: discord.Interaction, current: str
+    ) -> IntChoices:
+        """Return the caller's pending reminders that match."""
+        # The option is an integer, but Discord sends the typed text
+        # as it is, which may be words, empty, or a number.
+        choices = reminder_choices(
+            connection, user_id=interaction.user.id, current=str(current)
+        )
+        return [
+            app_commands.Choice(name=name, value=value)
+            for name, value in choices
+        ]
+
+    return autocomplete
+
+
 def build_remind_group(
     *,
     connection: sqlite3.Connection,
@@ -1009,12 +1055,12 @@ def build_remind_group(
     owner_id: int,
     log_usage: Callable[[CommandUsage], None],
 ) -> app_commands.Group:
-    """Return the /remind group with add.
+    """Return the /remind group with add, list and cancel.
 
     Discord does not let a command with subcommands take options of
     its own, so creating a reminder is /remind add, next to the list
-    and cancel subcommands that come later. ``log_usage`` receives
-    each command call's usage record.
+    and cancel subcommands. ``log_usage`` receives each command
+    call's usage record.
     """
     group = app_commands.Group(
         name=REMIND_GROUP_NAME, description=REMIND_GROUP_DESCRIPTION
@@ -1058,6 +1104,49 @@ def build_remind_group(
                 repeat=repeat_value,
                 channel_id=channel_id,
                 bot_can_post=can_post,
+                now=context.now,
+            ),
+            log_usage=log_usage,
+        )
+
+    @group.command(
+        name=REMIND_LIST_SUBCOMMAND, description=REMIND_LIST_DESCRIPTION
+    )
+    async def remind_list_command(interaction: discord.Interaction) -> None:
+        """Run /remind list."""
+        context = context_from_interaction(interaction)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=REMIND_LIST_NAME,
+            function=lambda: remind_list(
+                connection, user_id=context.user_id, now=context.now
+            ),
+            log_usage=log_usage,
+        )
+
+    @group.command(
+        name=REMIND_CANCEL_SUBCOMMAND, description=REMIND_CANCEL_DESCRIPTION
+    )
+    @app_commands.describe(reminder=REMIND_REMINDER_DESCRIPTION)
+    @app_commands.autocomplete(reminder=reminder_autocomplete(connection))
+    async def remind_cancel_command(
+        interaction: discord.Interaction, reminder: int
+    ) -> None:
+        """Run /remind cancel."""
+        context = context_from_interaction(interaction)
+        await handle_command(
+            interaction,
+            connection=connection,
+            registry=registry,
+            owner_id=owner_id,
+            command_name=REMIND_CANCEL_NAME,
+            function=lambda: remind_cancel(
+                connection,
+                user_id=context.user_id,
+                reminder_id=reminder,
                 now=context.now,
             ),
             log_usage=log_usage,

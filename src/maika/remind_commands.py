@@ -1,10 +1,11 @@
-"""The /remind commands. This slice adds /remind add.
+"""The /remind commands: add, list and cancel.
 
-See ``docs/design.md`` sections 1.2 (the ``remind.create`` key), 1.5
-(reply visibility), 2.2 (reminders, time forms, repeats) and 9.10
-(the ``reminders`` table). The command is level 0, replies
-ephemerally and changes only the person's own reminders, so nothing
-is written to the audit log.
+See ``docs/design.md`` sections 1.2 (the ``remind.create``,
+``remind.list`` and ``remind.cancel`` keys), 1.5 (reply visibility),
+2.2 (reminders, time forms, repeats) and 9.10 (the ``reminders``
+table). The commands are level 0, reply ephemerally and read or
+change only the person's own reminders, so nothing is written to the
+audit log.
 
 Nothing here reads the clock or touches Discord: the caller passes
 ``now`` in UTC Unix seconds, the channel, and whether the bot may
@@ -24,14 +25,19 @@ from maika.permissions import Level, PermissionKey
 from maika.reminders import (
     DELIVERY_CHANNEL,
     DELIVERY_DM,
+    CancelOutcome,
+    cancel_reminder,
     count_pending,
     create_reminder,
+    list_pending,
+    list_recently_failed,
 )
 from maika.repeat_rules import (
     REPEAT_CHOICE_LABELS,
     RepeatChoice,
     RepeatRuleError,
     build_repeat_rule,
+    describe_repeat_rule,
 )
 from maika.reply_helpers import REPLY_PART_SEPARATOR, join_parts
 from maika.results import CommandResult, FailureKind
@@ -42,8 +48,12 @@ from maika.user_settings import TIMEZONE_KEY, get_user_setting
 SETTINGS = build_foundation_registry()
 
 REMIND_ADD_NAME = "remind add"
+REMIND_LIST_NAME = "remind list"
+REMIND_CANCEL_NAME = "remind cancel"
 
 REMIND_CREATE_KEY = PermissionKey("remind.create", Level.EVERYONE)
+REMIND_LIST_KEY = PermissionKey("remind.list", Level.EVERYONE)
+REMIND_CANCEL_KEY = PermissionKey("remind.cancel", Level.EVERYONE)
 
 REMIND_ADD_EXAMPLE = "/remind add when:2h message:submit assignment"
 
@@ -59,6 +69,36 @@ REMIND_ADD_COMMAND = CommandDefinition(
         f"Example: {REMIND_ADD_EXAMPLE}"
     ),
     example=REMIND_ADD_EXAMPLE,
+)
+
+REMIND_LIST_EXAMPLE = "/remind list"
+
+REMIND_LIST_COMMAND = CommandDefinition(
+    name=REMIND_LIST_NAME,
+    description="List your reminders",
+    category=CommandCategory.REMINDERS_AND_TIME,
+    key=REMIND_LIST_KEY,
+    help_text=(
+        "Lists your pending reminders, and the ones that could not "
+        "be delivered in the last 7 days. "
+        f"Example: {REMIND_LIST_EXAMPLE}"
+    ),
+    example=REMIND_LIST_EXAMPLE,
+)
+
+REMIND_CANCEL_EXAMPLE = "/remind cancel reminder:12"
+
+REMIND_CANCEL_COMMAND = CommandDefinition(
+    name=REMIND_CANCEL_NAME,
+    description="Cancel one of your reminders",
+    category=CommandCategory.REMINDERS_AND_TIME,
+    key=REMIND_CANCEL_KEY,
+    help_text=(
+        "Cancels one of your pending reminders. Start typing its "
+        "text or number to pick it. "
+        f"Example: {REMIND_CANCEL_EXAMPLE}"
+    ),
+    example=REMIND_CANCEL_EXAMPLE,
 )
 
 # The longest reminder text, in characters.
@@ -86,6 +126,48 @@ CHANNEL_NOTE = "I'll post it in <#{channel_id}>."
 TIMEZONE_NOTE = "Times are read in {timezone}."
 
 DELIVERY_CHOICES = (DELIVERY_DM, DELIVERY_CHANNEL)
+
+SECONDS_PER_DAY = 24 * 60 * 60
+# How far back /remind list shows reminders that were not delivered.
+NOT_DELIVERED_DAYS = 7
+
+# A shortened message ends with this mark, counted in its length.
+CUT_MARK = "…"
+# The longest pending message shown by /remind list, in characters.
+LIST_MESSAGE_LIMIT = 100
+
+NO_PENDING_MESSAGE = "You have no pending reminders."
+PENDING_HEADING = "Pending reminders"
+NOT_DELIVERED_HEADING = f"Not delivered (last {NOT_DELIVERED_DAYS} days)"
+SECTION_SEPARATOR = "\n\n"
+LINE_SEPARATOR = "\n"
+ENTRY_FIELD_SEPARATOR = " · "
+ENTRY_NUMBER = "#{id}"
+PENDING_TIME = "<t:{due}:f> (<t:{due}:R>)"
+NOT_DELIVERED_TIME = "<t:{due}:f>"
+DM_ROUTE = "DM"
+CHANNEL_ROUTE = "in <#{channel_id}>"
+REPEATS_FIELD = "Repeats: {label} ({timezone})"
+
+# The message comes last with no closing period, so a message that
+# ends with its own punctuation is not followed by a second one.
+CANCELLED_REPLY = "Cancelled reminder #{id}: {message}"
+CANCELLED_REPEATING_REPLY = (
+    "Cancelled reminder #{id} ({label}), so it will not fire again: {message}"
+)
+CANCEL_NOT_FOUND_MESSAGE = (
+    "I couldn't find a pending reminder with that number."
+)
+CANCEL_NOT_PENDING_MESSAGE = "That reminder is no longer pending."
+
+# Discord shows at most 25 autocomplete choices, and a choice name is
+# at most 100 characters. The message part of a name is shorter, so
+# the number always fits.
+CHOICE_LIMIT = 25
+CHOICE_NAME_LIMIT = 100
+CHOICE_MESSAGE_LIMIT = 50
+CHOICE_NAME = "#{id} {message}"
+NUMBER_PREFIX = "#"
 
 
 def _check_delivery(
@@ -243,3 +325,178 @@ def remind_add(
             timezone_note=timezone if read_in_timezone else None,
         )
     )
+
+
+def _one_line(text: str) -> str:
+    """Return text with each run of whitespace made one space."""
+    return " ".join(text.split())
+
+
+def _shorten(text: str, limit: int) -> str:
+    """Return text cut to ``limit`` characters, ending with "…"."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - len(CUT_MARK)] + CUT_MARK
+
+
+def _entry_line(row: sqlite3.Row, *, time_text: str, message: str) -> str:
+    """Return one /remind list line for a reminder row.
+
+    The fields are the number, the time, the message, the route, and
+    for a repeating reminder its label and timezone.
+    """
+    if row["delivery"] == DELIVERY_CHANNEL:
+        route = CHANNEL_ROUTE.format(channel_id=row["channel_id"])
+    else:
+        route = DM_ROUTE
+    fields = [ENTRY_NUMBER.format(id=row["id"]), time_text, message, route]
+    if row["repeat_rule"] is not None:
+        fields.append(
+            REPEATS_FIELD.format(
+                label=describe_repeat_rule(row["repeat_rule"]),
+                timezone=row["timezone"],
+            )
+        )
+    return ENTRY_FIELD_SEPARATOR.join(fields)
+
+
+def _pending_line(row: sqlite3.Row) -> str:
+    """Return a pending reminder's line, its message on one line."""
+    return _entry_line(
+        row,
+        time_text=PENDING_TIME.format(due=row["due_at"]),
+        message=_shorten(_one_line(row["message"]), LIST_MESSAGE_LIMIT),
+    )
+
+
+def _not_delivered_line(row: sqlite3.Row) -> str:
+    """Return a not-delivered reminder's line, with the full message.
+
+    The text is shown whole because this list is the only place a
+    person can read a reminder that never reached them.
+    """
+    return _entry_line(
+        row,
+        time_text=NOT_DELIVERED_TIME.format(due=row["due_at"]),
+        message=row["message"],
+    )
+
+
+def _section(heading: str, lines: list[str]) -> str:
+    """Return a heading followed by one line per entry."""
+    return LINE_SEPARATOR.join([heading, *lines])
+
+
+def remind_list(
+    connection: sqlite3.Connection, *, user_id: int, now: int
+) -> CommandResult:
+    """List a person's pending and recently undelivered reminders.
+
+    The reply has a "Pending reminders" section and a "Not delivered
+    (last 7 days)" section, each left out when empty and each soonest
+    first. With no pending reminders the reply starts with "You have
+    no pending reminders." A long reply is split into several
+    messages when it is sent.
+    """
+    pending = list_pending(connection, user_id)
+    since = now - NOT_DELIVERED_DAYS * SECONDS_PER_DAY
+    failed = list_recently_failed(connection, user_id, since=since)
+
+    sections: list[str] = []
+    if pending:
+        sections.append(
+            _section(PENDING_HEADING, [_pending_line(row) for row in pending])
+        )
+    else:
+        sections.append(NO_PENDING_MESSAGE)
+    if failed:
+        sections.append(
+            _section(
+                NOT_DELIVERED_HEADING,
+                [_not_delivered_line(row) for row in failed],
+            )
+        )
+    return CommandResult.ok(SECTION_SEPARATOR.join(sections))
+
+
+def remind_cancel(
+    connection: sqlite3.Connection,
+    *,
+    user_id: int,
+    reminder_id: int,
+    now: int,
+) -> CommandResult:
+    """Cancel one of a person's own pending reminders.
+
+    A missing reminder or someone else's is NOT_FOUND, with the same
+    message, so the reply says nothing about other people's
+    reminders. The person's own reminder in another status is
+    INVALID. There is no confirm step and no audit row. ``now`` is
+    unused for now and kept so every /remind command has the same
+    shape.
+    """
+    with transaction(connection):
+        cancelled = cancel_reminder(
+            connection, reminder_id=reminder_id, user_id=user_id
+        )
+
+    match cancelled.outcome:
+        case CancelOutcome.NOT_FOUND:
+            return CommandResult.fail(
+                FailureKind.NOT_FOUND, CANCEL_NOT_FOUND_MESSAGE
+            )
+        case CancelOutcome.NOT_PENDING:
+            return CommandResult.fail(
+                FailureKind.INVALID, CANCEL_NOT_PENDING_MESSAGE
+            )
+        case CancelOutcome.CANCELLED:
+            if cancelled.repeat_rule is None:
+                return CommandResult.ok(
+                    CANCELLED_REPLY.format(
+                        id=reminder_id, message=cancelled.message
+                    )
+                )
+            return CommandResult.ok(
+                CANCELLED_REPEATING_REPLY.format(
+                    id=reminder_id,
+                    label=describe_repeat_rule(cancelled.repeat_rule),
+                    message=cancelled.message,
+                )
+            )
+
+
+def _matches(row: sqlite3.Row, text: str) -> bool:
+    """Return True when a reminder matches the typed text.
+
+    The text matches the message without regard to case. Digits,
+    with or without a leading "#", also match a number that starts
+    with them.
+    """
+    if text in _one_line(row["message"]).lower():
+        return True
+    digits = text.removeprefix(NUMBER_PREFIX)
+    return digits.isdecimal() and str(row["id"]).startswith(digits)
+
+
+def _choice_name(row: sqlite3.Row) -> str:
+    """Return "#<id> <message>", the message cut to 50 characters."""
+    message = _shorten(_one_line(row["message"]), CHOICE_MESSAGE_LIMIT)
+    name = CHOICE_NAME.format(id=row["id"], message=message)
+    return _shorten(name, CHOICE_NAME_LIMIT)
+
+
+def reminder_choices(
+    connection: sqlite3.Connection, *, user_id: int, current: str
+) -> list[tuple[str, int]]:
+    """Return autocomplete choices for a person's pending reminders.
+
+    Each choice is a (name, reminder id) pair, soonest first, at most
+    25. ``current`` is the typed text; with nothing typed every
+    pending reminder is offered (up to the limit). Only the person's
+    own rows are read, and nothing is written.
+    """
+    text = _one_line(current).lower()
+    rows = list_pending(connection, user_id)
+    if text != "":
+        rows = [row for row in rows if _matches(row, text)]
+    return [(_choice_name(row), row["id"]) for row in rows[:CHOICE_LIMIT]]

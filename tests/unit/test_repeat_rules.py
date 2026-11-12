@@ -13,6 +13,7 @@ from maika.repeat_rules import (
     RepeatRuleError,
     RepeatRuleReason,
     build_repeat_rule,
+    describe_repeat_rule,
     next_occurrence,
 )
 
@@ -417,3 +418,68 @@ def test_reason_values():
         "invalid_rule",
         "timezone_unavailable",
     ]
+
+
+# describe_repeat_rule
+
+
+@pytest.mark.parametrize("choice", list(RepeatChoice))
+def test_describe_gives_back_every_label(choice):
+    rule = rule_for(choice, TUESDAY)
+    assert describe_repeat_rule(rule) == REPEAT_CHOICE_LABELS[choice]
+
+
+@pytest.mark.parametrize(
+    ("choice", "first_due"),
+    [
+        (RepeatChoice.MONTHLY, local(2026, 12, 31, 9, 30)),
+        (RepeatChoice.MONTHLY, local(2026, 12, 29, 9, 30)),
+        (RepeatChoice.MONTHLY, local(2026, 12, 1, 9, 30)),
+        (RepeatChoice.YEARLY, local(2028, 2, 29, 9, 30)),
+        (RepeatChoice.YEARLY, local(2027, 12, 31, 23, 59)),
+        (RepeatChoice.WEEKLY, local(2026, 11, 22, 0, 0)),
+        (RepeatChoice.BIWEEKLY, local(2026, 11, 21, 18, 0)),
+    ],
+)
+def test_describe_special_days(choice, first_due):
+    rule = rule_for(choice, first_due)
+    assert describe_repeat_rule(rule) == REPEAT_CHOICE_LABELS[choice]
+
+
+def test_describe_rule_built_in_tokyo():
+    rule = rule_for(RepeatChoice.WEEKDAYS, TUESDAY, timezone=TOKYO_NAME)
+    assert describe_repeat_rule(rule) == "Weekdays (Mon to Fri)"
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "garbage",
+        "",
+        "FREQ=SOMETIMES",
+        "FREQ=HOURLY;BYMINUTE=0",
+        "FREQ=DAILY;INTERVAL=3",
+        "FREQ=DAILY;FREQ=DAILY",
+        "FREQ=DAILY;;BYHOUR=9",
+        "FREQ=WEEKLY",
+        "FREQ=WEEKLY;BYDAY=XX",
+        "FREQ=WEEKLY;BYDAY=TU,TH",
+        "FREQ=WEEKLY;INTERVAL=3;BYDAY=TU",
+        "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TU,WE,TH,FR",
+        "FREQ=MONTHLY",
+        "FREQ=MONTHLY;BYMONTHDAY=32",
+        "FREQ=MONTHLY;BYMONTHDAY=0",
+        "FREQ=MONTHLY;BYMONTHDAY=31,-2",
+        "FREQ=MONTHLY;BYMONTHDAY=abc",
+        "FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=5",
+        "FREQ=YEARLY;BYDAY=MO",
+        "freq=daily",
+        "FREQ=DAILY;BYHOUR=9;BYMINUTE",
+    ],
+)
+def test_describe_unrecognized_rule(rule):
+    assert describe_repeat_rule(rule) == "Custom repeat"
+
+
+def test_describe_daily_with_interval_one():
+    assert describe_repeat_rule("FREQ=DAILY;INTERVAL=1") == "Daily"

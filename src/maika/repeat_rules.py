@@ -1,4 +1,4 @@
-"""Repeat rules for /remind: build the rule text, find the next time.
+"""Repeat rules for /remind: build, describe, and find the next time.
 
 See ``docs/design.md`` sections 2.2 (Repeating reminders) and 9.10
 (the ``repeat_rule`` and ``timezone`` columns). A rule is RFC 5545
@@ -35,6 +35,29 @@ LEAP_DAY = 29
 BIWEEKLY_INTERVAL = 2
 
 RULE_SEPARATOR = ";"
+RULE_PART_ASSIGN = "="
+RULE_LIST_SEPARATOR = ","
+
+# Rule parts read by describe_repeat_rule.
+FREQ_PART = "FREQ"
+INTERVAL_PART = "INTERVAL"
+BYDAY_PART = "BYDAY"
+BYMONTHDAY_PART = "BYMONTHDAY"
+
+FREQ_DAILY = "DAILY"
+FREQ_WEEKLY = "WEEKLY"
+FREQ_MONTHLY = "MONTHLY"
+FREQ_YEARLY = "YEARLY"
+
+# A rule without INTERVAL repeats every period.
+DEFAULT_INTERVAL = "1"
+# BYMONTHDAY=-1 is the last day of the month.
+LAST_DAY_OF_MONTH = "-1"
+FIRST_MONTH_DAY = 1
+LAST_MONTH_DAY = 31
+
+# Shown for stored rule text that matches no dropdown choice.
+CUSTOM_REPEAT_LABEL = "Custom repeat"
 
 # How far before ``after`` the search starts, as local wall time. A
 # local wall time and its UTC moment can be out of step by the change
@@ -183,6 +206,102 @@ def build_repeat_rule(
     local = _local_wall_time(first_due, zone)
     parts = _pattern_parts(choice, local) + _time_parts(local)
     return RULE_SEPARATOR.join(parts)
+
+
+def _rule_parts(rule: str) -> dict[str, str] | None:
+    """Return the NAME=VALUE parts of rule text as a dict.
+
+    Return None when a part has no "=" or a name appears twice.
+    """
+    parts: dict[str, str] = {}
+    for piece in rule.split(RULE_SEPARATOR):
+        name, assign, value = piece.partition(RULE_PART_ASSIGN)
+        if assign == "" or name in parts:
+            return None
+        parts[name] = value
+    return parts
+
+
+def _is_month_day(text: str) -> bool:
+    """Return True when text is a day of the month, 1 to 31."""
+    if not text.isdecimal():
+        return False
+    return FIRST_MONTH_DAY <= int(text) <= LAST_MONTH_DAY
+
+
+def _is_monthly_day(bymonthday: str) -> bool:
+    """Return True for a Monthly choice's BYMONTHDAY value.
+
+    That is a plain day ("17") or a day with the last-day fallback
+    ("31,-1").
+    """
+    day, separator, fallback = bymonthday.partition(RULE_LIST_SEPARATOR)
+    if separator == "":
+        return _is_month_day(day)
+    return _is_month_day(day) and fallback == LAST_DAY_OF_MONTH
+
+
+def _matching_choice(parts: dict[str, str]) -> RepeatChoice | None:
+    """Return the dropdown choice that built these parts, if any.
+
+    Only FREQ, INTERVAL, BYDAY and BYMONTHDAY are read; the time
+    parts do not change which choice a rule came from.
+    """
+    freq = parts.get(FREQ_PART)
+    interval = parts.get(INTERVAL_PART, DEFAULT_INTERVAL)
+    byday = parts.get(BYDAY_PART)
+    bymonthday = parts.get(BYMONTHDAY_PART)
+    every_period = interval == DEFAULT_INTERVAL
+
+    if freq == FREQ_DAILY:
+        if every_period and byday is None and bymonthday is None:
+            return RepeatChoice.DAILY
+        return None
+
+    if freq == FREQ_WEEKLY:
+        if bymonthday is not None or byday is None:
+            return None
+        if byday == RULE_LIST_SEPARATOR.join(WORKDAY_CODES):
+            return RepeatChoice.WEEKDAYS if every_period else None
+        if byday not in WEEKDAY_CODES:
+            return None
+        if every_period:
+            return RepeatChoice.WEEKLY
+        if interval == str(BIWEEKLY_INTERVAL):
+            return RepeatChoice.BIWEEKLY
+        return None
+
+    if freq == FREQ_MONTHLY:
+        if not every_period or byday is not None or bymonthday is None:
+            return None
+        if bymonthday == LAST_DAY_OF_MONTH:
+            return RepeatChoice.LAST_DAY
+        if _is_monthly_day(bymonthday):
+            return RepeatChoice.MONTHLY
+        return None
+
+    if freq == FREQ_YEARLY:
+        if every_period and byday is None and bymonthday is not None:
+            return RepeatChoice.YEARLY
+        return None
+
+    return None
+
+
+def describe_repeat_rule(rule: str) -> str:
+    """Return the dropdown label for stored rule text.
+
+    For example "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU;..." gives "Every 2
+    weeks". Text that matches no dropdown choice gives "Custom
+    repeat". It never raises.
+    """
+    parts = _rule_parts(rule)
+    if parts is None:
+        return CUSTOM_REPEAT_LABEL
+    choice = _matching_choice(parts)
+    if choice is None:
+        return CUSTOM_REPEAT_LABEL
+    return REPEAT_CHOICE_LABELS[choice]
 
 
 def _read_rule(rule: str, start: datetime.datetime) -> rrule.rrulebase:
