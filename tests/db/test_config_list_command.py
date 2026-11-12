@@ -116,7 +116,7 @@ def test_overview_with_foundation_settings(migrated_db):
         "Use `/config list category:<name>`."
     )
     assert every.message == (
-        "logging (16)\nbackups (7)\ncommands (1)\nreminders (2)\n"
+        "logging (16)\nbackups (7)\ncommands (1)\nreminders (3)\n"
         "Use `/config list category:<name>`."
     )
 

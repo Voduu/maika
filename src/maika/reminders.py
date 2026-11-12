@@ -1,8 +1,11 @@
 """Read and write rows of the reminders table.
 
 See ``docs/design.md`` sections 2.2 and 9.10. Creating or cancelling
-a reminder is a person's own action, so nothing is written to the
-audit log.
+a reminder is a person's own action, and delivering one is the bot's
+routine work, so nothing is written to the audit log.
+
+The delivery updates change only a row that is still pending, so a
+reminder cancelled while it was being sent stays cancelled.
 
 Each function is a single statement, except ``cancel_reminder``,
 which reads the row after a refused update to say why. No function
@@ -19,6 +22,7 @@ DELIVERY_DM = "dm"
 DELIVERY_CHANNEL = "channel"
 
 STATUS_PENDING = "pending"
+STATUS_DELIVERED = "delivered"
 STATUS_FAILED = "failed"
 STATUS_CANCELLED = "cancelled"
 
@@ -55,6 +59,34 @@ CANCEL_SQL = (
 
 SELECT_CANCEL_REFUSAL_SQL = (
     "SELECT message, repeat_rule FROM reminders WHERE id = ? AND user_id = ?"
+)
+
+# The reminders_due index on (status, due_at) serves this query. The
+# id is the rowid, which the index carries, so the order needs no
+# extra sort.
+SELECT_DUE_SQL = (
+    "SELECT * FROM reminders WHERE status = ? AND due_at <= ? "
+    "ORDER BY due_at, id LIMIT ? OFFSET ?"
+)
+
+MARK_DELIVERED_SQL = (
+    "UPDATE reminders SET status = :delivered, delivered_at = :now, "
+    "delivered_via = :via WHERE id = :id AND status = :pending"
+)
+
+MARK_FAILED_SQL = (
+    "UPDATE reminders SET status = :failed "
+    "WHERE id = :id AND status = :pending"
+)
+
+RESCHEDULE_SQL = (
+    "UPDATE reminders SET due_at = :due_at "
+    "WHERE id = :id AND status = :pending"
+)
+
+RECORD_DELIVERY_SQL = (
+    "UPDATE reminders SET delivered_at = :now, delivered_via = :via "
+    "WHERE id = :id AND status = :pending"
 )
 
 
@@ -196,4 +228,68 @@ def cancel_reminder(
         CancelOutcome.NOT_PENDING,
         message=own_row["message"],
         repeat_rule=own_row["repeat_rule"],
+    )
+
+
+def list_due(
+    connection: sqlite3.Connection, now: int, limit: int, offset: int
+) -> list[sqlite3.Row]:
+    """Return pending reminders due at or before ``now``.
+
+    The rows come by due time, then by id. ``limit`` and ``offset``
+    page through them.
+    """
+    return connection.execute(
+        SELECT_DUE_SQL, (STATUS_PENDING, now, limit, offset)
+    ).fetchall()
+
+
+def mark_delivered(
+    connection: sqlite3.Connection, reminder_id: int, *, now: int, via: str
+) -> None:
+    """Mark a one-time reminder delivered, at ``now`` by ``via``."""
+    connection.execute(
+        MARK_DELIVERED_SQL,
+        {
+            "delivered": STATUS_DELIVERED,
+            "now": now,
+            "via": via,
+            "id": reminder_id,
+            "pending": STATUS_PENDING,
+        },
+    )
+
+
+def mark_failed(connection: sqlite3.Connection, reminder_id: int) -> None:
+    """Mark a pending reminder failed."""
+    connection.execute(
+        MARK_FAILED_SQL,
+        {
+            "failed": STATUS_FAILED,
+            "id": reminder_id,
+            "pending": STATUS_PENDING,
+        },
+    )
+
+
+def reschedule(
+    connection: sqlite3.Connection, reminder_id: int, *, due_at: int
+) -> None:
+    """Move a pending repeating reminder to its next due time."""
+    connection.execute(
+        RESCHEDULE_SQL,
+        {"due_at": due_at, "id": reminder_id, "pending": STATUS_PENDING},
+    )
+
+
+def record_delivery(
+    connection: sqlite3.Connection, reminder_id: int, *, now: int, via: str
+) -> None:
+    """Record a repeating reminder's latest delivery time and route.
+
+    The status is left as it is.
+    """
+    connection.execute(
+        RECORD_DELIVERY_SQL,
+        {"now": now, "via": via, "id": reminder_id, "pending": STATUS_PENDING},
     )

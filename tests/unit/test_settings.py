@@ -661,11 +661,12 @@ FOUNDATION_KEYS = {
     "commands.confirm_timeout_seconds",
     "reminders.default_time",
     "reminders.max_pending_per_person",
+    "reminders.check_seconds",
 }
 
 
-def test_foundation_has_exactly_26_settings():
-    assert len(FOUNDATION_SETTINGS) == 26
+def test_foundation_has_exactly_27_settings():
+    assert len(FOUNDATION_SETTINGS) == 27
 
 
 def test_foundation_keys_match_design():
@@ -719,6 +720,7 @@ def test_foundation_registry():
     assert [d.key for d in registry.definitions_in_category("reminders")] == [
         "reminders.default_time",
         "reminders.max_pending_per_person",
+        "reminders.check_seconds",
     ]
 
 
@@ -726,6 +728,7 @@ def test_reminder_settings():
     registry = build_foundation_registry()
     default_time = registry.get("reminders.default_time")
     max_pending = registry.get("reminders.max_pending_per_person")
+    check_seconds = registry.get("reminders.check_seconds")
 
     assert default_time.value_type is ValueType.TIME
     assert default_time.default == datetime.time(8, 0)
@@ -740,6 +743,15 @@ def test_reminder_settings():
     assert max_pending.level is SettingLevel.ADVANCED
     assert max_pending.server_scope is False
     assert max_pending.description == "Pending reminders one person may hold."
+    assert check_seconds.category == "reminders"
+    assert check_seconds.value_type is ValueType.INT
+    assert check_seconds.default == 60
+    assert (check_seconds.minimum, check_seconds.maximum) == (10, 300)
+    assert check_seconds.level is SettingLevel.ADVANCED
+    assert check_seconds.server_scope is False
+    assert check_seconds.description == (
+        "Seconds between checks for due reminders."
+    )
 
 
 def test_every_backups_setting_is_in_backups_category():

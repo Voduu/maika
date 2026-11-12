@@ -2,11 +2,11 @@
 
 These are the 23 definitions of ``docs/design.md`` section 10.15,
 copied exactly, ``commands.confirm_timeout_seconds`` from 10.2 for
-the confirmation buttons, and two reminder settings from 10.12 for
-/remind add. The log settings are in the "logging" category, the
-seven ``backups.*`` settings in "backups" and the reminder settings
-in "reminders". Other sections add their settings with the features
-that use them.
+the confirmation buttons, and three reminder settings from 10.12 for
+/remind add and reminder delivery. The log settings are in the
+"logging" category, the seven ``backups.*`` settings in "backups"
+and the reminder settings in "reminders". Other sections add their
+settings with the features that use them.
 """
 
 import datetime
@@ -52,6 +52,11 @@ MAX_PENDING_REMINDERS_KEY = "reminders.max_pending_per_person"
 MAX_PENDING_REMINDERS_DEFAULT = 25
 MAX_PENDING_REMINDERS_MIN = 1
 MAX_PENDING_REMINDERS_MAX = 500
+
+REMINDER_CHECK_SECONDS_KEY = "reminders.check_seconds"
+REMINDER_CHECK_SECONDS_DEFAULT = 60
+REMINDER_CHECK_SECONDS_MIN = 10
+REMINDER_CHECK_SECONDS_MAX = 300
 
 FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
     SettingDefinition(
@@ -320,6 +325,17 @@ FOUNDATION_SETTINGS: tuple[SettingDefinition, ...] = (
         minimum=MAX_PENDING_REMINDERS_MIN,
         maximum=MAX_PENDING_REMINDERS_MAX,
         description="Pending reminders one person may hold.",
+    ),
+    SettingDefinition(
+        key=REMINDER_CHECK_SECONDS_KEY,
+        category=REMINDERS_CATEGORY,
+        level=SettingLevel.ADVANCED,
+        server_scope=False,
+        value_type=ValueType.INT,
+        default=REMINDER_CHECK_SECONDS_DEFAULT,
+        minimum=REMINDER_CHECK_SECONDS_MIN,
+        maximum=REMINDER_CHECK_SECONDS_MAX,
+        description="Seconds between checks for due reminders.",
     ),
 )
 
