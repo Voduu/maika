@@ -745,13 +745,26 @@ def test_reminder_settings():
     assert max_pending.description == "Pending reminders one person may hold."
     assert check_seconds.category == "reminders"
     assert check_seconds.value_type is ValueType.INT
-    assert check_seconds.default == 60
-    assert (check_seconds.minimum, check_seconds.maximum) == (10, 300)
+    assert check_seconds.default == 1
+    assert (check_seconds.minimum, check_seconds.maximum) == (1, 300)
     assert check_seconds.level is SettingLevel.ADVANCED
     assert check_seconds.server_scope is False
     assert check_seconds.description == (
         "Seconds between checks for due reminders."
     )
+
+
+@pytest.mark.parametrize("text", ["1", "300"])
+def test_check_seconds_accepts_range_ends(text):
+    check_seconds = build_foundation_registry().get("reminders.check_seconds")
+    assert parse_value(check_seconds, text) == int(text)
+
+
+@pytest.mark.parametrize("text", ["0", "301"])
+def test_check_seconds_rejects_outside_range(text):
+    check_seconds = build_foundation_registry().get("reminders.check_seconds")
+    with pytest.raises(SettingValueError):
+        parse_value(check_seconds, text)
 
 
 def test_every_backups_setting_is_in_backups_category():
