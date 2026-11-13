@@ -3,7 +3,8 @@
 The slash commands are added to the command tree and synced once in
 ``setup_hook``, which also starts the log router, attaches the
 handler that forwards warnings and errors to ``#errors``, and starts
-the daily database backup task and the weekly offsite copy task. The
+the daily database backup task, the weekly offsite copy task and the
+reminder delivery loop. The
 startup, shutdown and command-usage lines go to ``#bot-log`` through
 the router (design section 3.18). Posting a log line is best effort:
 a missing channel or a failed post is logged to the console and never
@@ -14,17 +15,25 @@ import asyncio
 import datetime
 import logging
 import sqlite3
+import time
 
 import discord
 from discord import app_commands
 
 import maika
-from maika import daily_backup, offsite_copy, usage_log
+from maika import daily_backup, offsite_copy, reminder_loop, usage_log
 from maika.commands import CommandRegistry
 from maika.config import Config
 from maika.discord_adapter import handle_tree_error
+from maika.discord_reminder_sender import DiscordReminderSender
+from maika.foundation_settings import (
+    REMINDER_CHECK_SECONDS_KEY,
+    build_foundation_registry,
+)
 from maika.log_names import LOGGER_NAME
 from maika.log_router import LogLevel, LogRouter, LogStream, RouterLogHandler
+from maika.reminder_delivery import DeliverySummary
+from maika.settings_store import get_value
 from maika.slash_commands import (
     build_birthday_group,
     build_block_commands,
@@ -35,6 +44,8 @@ from maika.slash_commands import (
 )
 
 logger = logging.getLogger(__name__)
+
+SETTINGS = build_foundation_registry()
 
 # The most time a log line post may take. Without a limit a slow or
 # rate-limited request could hold up the queue.
@@ -96,6 +107,7 @@ class MaikaClient(discord.Client):
         # Set in setup_hook and cancelled in close().
         self._backup_task: asyncio.Task[None] | None = None
         self._offsite_task: asyncio.Task[None] | None = None
+        self._reminder_task: asyncio.Task[None] | None = None
         # Set by the first ready event. It keeps the startup line to
         # one post per run, and close() reads it to skip the shutdown
         # line when the bot never got that far.
@@ -107,14 +119,16 @@ class MaikaClient(discord.Client):
 
         The router's run() starts as a background task, and a
         RouterLogHandler on the ``maika`` logger forwards warnings and
-        errors to #errors. The daily backup task and the weekly
-        offsite copy task start next. A failed sync is logged and the
+        errors to #errors. The daily backup task, the weekly offsite
+        copy task and the reminder delivery loop start next. A failed
+        sync is logged and the
         bot keeps running; Discord keeps the commands from the last
         successful sync.
         """
         self._start_log_router()
         self._start_backup_task()
         self._start_offsite_task()
+        self._start_reminder_task()
         self.tree.add_command(
             build_config_group(
                 connection=self.connection,
@@ -197,7 +211,11 @@ class MaikaClient(discord.Client):
         self.log_router.post(LogStream.BOT_LOG, LogLevel.INFO, line)
 
     async def close(self) -> None:
-        """Stop the backup tasks, post the shutdown line, then close.
+        """Stop the background tasks, post the shutdown line, close.
+
+        The reminder loop stops first, so no reminder is sent while
+        the bot shuts down. A reminder whose send was interrupted
+        stays pending and is sent after the restart.
 
         ``close`` can be called more than once (for example by
         ``Client.run`` after an earlier call), so the line is posted
@@ -206,6 +224,7 @@ class MaikaClient(discord.Client):
         token). The router gets its drain time before the Discord
         connection closes, so queued lines can still be sent.
         """
+        await self._stop_reminder_task()
         await self._stop_backup_task()
         await self._stop_offsite_task()
         if (
@@ -296,6 +315,44 @@ class MaikaClient(discord.Client):
             self.config.database_path,
             self.log_router,
             now=datetime.datetime.now(),
+        )
+
+    def _start_reminder_task(self) -> None:
+        """Start the reminder delivery loop, if it is not running."""
+        if self._reminder_task is None:
+            self._reminder_task = asyncio.create_task(
+                reminder_loop.run_reminder_loop(
+                    self._run_reminder_cycle,
+                    read_interval=self._read_reminder_interval,
+                )
+            )
+
+    async def _stop_reminder_task(self) -> None:
+        """Cancel the reminder delivery loop and wait for it to end.
+
+        A send in progress is cancelled with it; that reminder's row
+        is left unchanged, so it is sent at the first check after the
+        restart.
+        """
+        task = self._reminder_task
+        if task is None:
+            return
+        self._reminder_task = None
+        task.cancel()
+        await asyncio.wait({task})
+
+    def _read_reminder_interval(self) -> int:
+        """Return ``reminders.check_seconds``, read at every wait."""
+        return get_value(self.connection, SETTINGS, REMINDER_CHECK_SECONDS_KEY)
+
+    async def _run_reminder_cycle(self) -> DeliverySummary:
+        """Deliver the reminders due now, once the bot is connected.
+
+        ``now`` is the current UTC time in Unix seconds.
+        """
+        await self.wait_until_ready()
+        return await reminder_loop.run_reminder_cycle(
+            self.connection, DiscordReminderSender(self), int(time.time())
         )
 
     def _stop_log_handler(self) -> None:
